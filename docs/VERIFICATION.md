@@ -37,3 +37,13 @@
 - Browser coverage now switches among all four champions, checks independent HUD and unavailable skills, confirms two unselected attackers keep dealing damage, and freezes every actor when paused.
 - WebKit verification runs in the PR's GitHub Actions workflow; consult the run result for the exact tested commit.
 - This is still a training arena. Other three full skill kits, enemy retaliation, champion death, lanes and match objectives remain unimplemented.
+
+## Level-one skills and retaliation — 2026-10-02
+
+- 37 local simulation cases passed: existing combat/squad coverage plus 19 skill/effect cases.
+- TypeScript checking and production build passed.
+- New checks cover separate defenses, magic vulnerability, max-duration CC, resource reservation, shield triggering/expiry, passives, pet lifetime/death, scouting expiry, first-target skillshots, hook pull, aura interruption, retaliation windup/cancellation, recall interruption, hero death/respawn, and persistent timers while stunned.
+- Local Chromium desktop/mobile: 11 passed, 1 desktop touch-only case skipped.
+- Browser suite includes touch aiming for all new manual/ultimate abilities, retaliation toggle, and switching away from an armed skill. Exact browser results are recorded by Verify game for the deployed commit.
+- All training targets are stationary champion-type targets. Minion/building-specific triggers and collision walls are verified when those entity types enter the game.
+- Retaliation balance (65 physical damage, 325 range, 1.5s interval, 0.45s windup) is provisional and configurable in skillConfig.ts.

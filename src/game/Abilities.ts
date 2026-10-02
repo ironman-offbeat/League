@@ -1,0 +1,134 @@
+import type { Combat, Dummy } from './combat.ts';
+import { RULES, distance } from './config.ts';
+import type { Point } from './config.ts';
+import { applyCC, applySlow, inCone, alongSegment, towards } from './effects.ts';
+import { SKILLS } from './skillConfig.ts';
+import type { SkillSlot, SkillPresentation } from './skillConfig.ts';
+export type Pet=Point & {hp:number;remaining:number;cooldown:number};
+export class Abilities {
+  owner:Combat;
+  stacks=0;
+  haste=0;
+  aura=false;
+  auraLock=0;
+  pet:Pet|null=null;
+  scout:(Point & {remaining:number})|null=null;
+  missiles:{point:Point;direction:Point;remaining:number;kind:'hook'|'arrow'}[]=[];
+  pull:Point|null=null;
+  constructor(owner:Combat){this.owner=owner;}
+  get reserve(){return this.presentation('ultimate').cost;}
+  presentation(slot:SkillSlot):SkillPresentation {
+    const kit=this.owner.profile.kit;
+    const {flame,frost,curse}=SKILLS;
+    if(slot==='ultimate') {
+      if(kit==='fury')return{key:'R',name:'거대화',aim:'self',cost:0,cooldown:RULES.ultimate.cooldown,range:RULES.ultimate.range,hint:'10초 체력 증가'};
+      if(kit==='flame')return{key:'R',name:'곰 소환',aim:'point',cost:flame.ultimate.cost,cooldown:flame.ultimate.cooldown,range:flame.ultimate.range,hint:'지점 지정 · 12초 소환'};
+      if(kit==='frost')return{key:'R',name:'얼음 화살',aim:'direction',cost:frost.ultimate.cost,cooldown:frost.ultimate.cooldown,range:frost.ultimate.range,hint:'첫 대상 기절'};
+      return{key:'R',name:'슬픈 미라',aim:'self',cost:curse.ultimate.cost,cooldown:curse.ultimate.cooldown,range:curse.ultimate.range,hint:'주변 속박'};
+    }
+    if(kit==='fury')return{key:'E',name:'돌진',aim:'direction',cost:0,cooldown:RULES.dash.cooldown,range:RULES.dash.range,hint:'드래그 / 선택 후 지점'};
+    if(kit==='flame')return{key:'W',name:'화염',aim:'direction',cost:flame.w.cost,cooldown:flame.w.cooldown,range:flame.w.range,hint:'부채꼴 · 기절 연계'};
+    if(kit==='frost')return{key:'E',name:'정찰',aim:'point',cost:frost.scout.cost,cooldown:frost.scout.cooldown,range:frost.scout.range,hint:'지정 지역 5초 공개'};
+    return{key:'Q',name:'붕대',aim:'direction',cost:curse.hook.cost,cooldown:curse.hook.cooldown,range:curse.hook.range,hint:'첫 대상에게 이동'};
+  }
+  canCast(slot:SkillSlot){const c=this.owner,p=this.presentation(slot);return c.canAct&&!c.dash&&!this.pull&&c.cooldown[slot==='manual'?'dash':'ultimate']<=0&&c.hero.mana>=p.cost&&!(c.hero.rooted>0&&slot==='manual'&&(c.profile.kit==='fury'||c.profile.kit==='curse'));}
+  cast(slot:SkillSlot,point?:Point){
+    const c=this.owner,p=this.presentation(slot),kit=c.profile.kit;
+    if(!this.canCast(slot))return false;
+    if(p.aim!=='self'&&(!point||!Number.isFinite(point.x)||!Number.isFinite(point.y)||(p.aim==='direction'&&distance(c.hero,point)<5)))return false;
+    if(kit==='fury')return slot==='manual'?c.castDash(point!):c.castUltimate();
+    c.hero.mana-=p.cost;c.cooldown[slot==='manual'?'dash':'ultimate']=p.cooldown;c.cancelRecall();c.pending=null;
+    if(slot==='manual')c.completed.dash=true;
+    const targets=c.enemies.filter(e=>e.alive&&c.canSee(e));
+    if(kit==='flame') {
+      const cfg=SKILLS.flame;
+      const center=slot==='ultimate'?towards(c.hero,point!,cfg.ultimate.range):c.hero;
+      const hit=targets.filter(e=>slot==='manual'?inCone(c.hero,point!,e,cfg.w.range,cfg.w.angle):distance(center,e)<=cfg.ultimate.radius);
+      const stun=this.stacks>=cfg.passive.stacks&&hit.length>0;
+      for(const e of hit){c.hurt(e,slot==='manual'?cfg.w.damage:cfg.ultimate.damage,p.key,true,'magic');if(stun)applyCC(e,'stunned',cfg.passive.stun);}
+      if(stun)this.stacks=0;else if(slot==='manual'&&hit.length)this.stacks=Math.min(cfg.passive.stacks,this.stacks+1);
+      if(slot==='ultimate')this.pet={...center,hp:cfg.pet.hp,remaining:cfg.pet.duration,cooldown:0};
+      c.events.push({kind:'slash',point:{...center}});
+    } else if(kit==='frost') {
+      if(slot==='manual'){this.scout={...towards(c.hero,point!,p.range),remaining:SKILLS.frost.scout.duration};this.reveal();}
+      else this.launch('arrow',point!,SKILLS.frost.ultimate.range);
+    } else {
+      if(slot==='manual')this.launch('hook',point!,SKILLS.curse.hook.range);
+      else {for(const e of targets.filter(e=>distance(c.hero,e)<=SKILLS.curse.ultimate.range)){c.hurt(e,SKILLS.curse.ultimate.damage,'R',true,'magic');applyCC(e,'rooted',SKILLS.curse.ultimate.root);}c.events.push({kind:'ultimate',point:{...c.hero}});}
+    }
+    return true;
+  }
+  private launch(kind:'hook'|'arrow',point:Point,range:number){const c=this.owner,d=distance(c.hero,point);this.missiles.push({point:{x:c.hero.x,y:c.hero.y},direction:{x:(point.x-c.hero.x)/d,y:(point.y-c.hero.y)/d},remaining:range,kind});}
+  onBasicHit(e:Dummy){
+    if(this.owner.profile.kit==='frost')applySlow(e,SKILLS.frost.passive.slow,SKILLS.frost.passive.duration);
+    if(this.owner.profile.kit==='curse')e.marked=Math.max(e.marked,SKILLS.curse.passive.duration);
+  }
+  onDamage(){
+    const c=this.owner,s=SKILLS.flame.shield;
+    if(c.profile.kit==='flame'&&c.canAct&&c.hero.hp/c.hero.maxHp<=s.threshold&&c.cooldown.e<=0&&c.hero.mana>=s.cost){
+      c.hero.mana-=s.cost;c.cooldown.e=s.cooldown;c.hero.shield=s.amount;c.hero.shieldRemaining=s.duration;
+    }
+  }
+  auto(target:Dummy){
+    const c=this.owner,kit=c.profile.kit;
+    if(kit==='flame'){
+      const q=SKILLS.flame.q;
+      if(c.cooldown.q<=0&&distance(c.hero,target)<=q.range&&this.pay(q.cost)){c.cooldown.q=q.cooldown;c.hurt(target,q.damage,'Q',true,'magic');this.stacks=Math.min(SKILLS.flame.passive.stacks,this.stacks+1);return true;}
+    } else if(kit==='frost'){
+      const s=SKILLS.frost;
+      if(c.cooldown.q<=0&&distance(c.hero,target)<=c.profile.stats.range+.001&&this.pay(s.q.cost)){c.cooldown.q=s.q.cooldown;this.haste=s.q.duration;return true;}
+      if(c.cooldown.w<=0&&distance(c.hero,target)<=s.w.range&&this.pay(s.w.cost)){
+        c.cooldown.w=s.w.cooldown;
+        for(const e of c.enemies.filter(e=>e.alive&&c.canSee(e)&&inCone(c.hero,target,e,s.w.range,s.w.angle))){c.hurt(e,s.w.damage+c.profile.stats.attack*s.w.ad,'W');applySlow(e,s.w.slow,s.w.duration);}
+        c.events.push({kind:'slash',point:{...c.hero}});return true;
+      }
+    } else if(kit==='curse'){
+      const s=SKILLS.curse.burst;
+      if(c.cooldown.e<=0&&distance(c.hero,target)<=s.range&&this.pay(s.cost)){
+        c.cooldown.e=s.cooldown;for(const e of c.enemies.filter(e=>e.alive&&c.canSee(e)&&distance(c.hero,e)<=s.range))c.hurt(e,s.damage,'E',true,'magic');c.events.push({kind:'slash',point:{...c.hero}});return true;
+      }
+    }
+    return false;
+  }
+  private pay(cost:number){if(this.owner.hero.mana-cost<this.reserve)return false;this.owner.hero.mana-=cost;return true;}
+  reset(){this.stacks=0;this.haste=0;this.aura=false;this.auraLock=0;this.pet=null;this.scout=null;this.pull=null;}
+  private reveal(){if(this.scout)for(const e of this.owner.enemies)if(distance(this.scout,e)<=SKILLS.frost.scout.radius)e.revealed=Math.max(e.revealed,RULES.step*2);}
+  step(dt:number){
+    const c=this.owner;this.haste=Math.max(0,this.haste-dt);this.auraLock=Math.max(0,this.auraLock-dt);
+    this.stepMissiles(dt);
+    if(!c.alive){this.pet=null;this.scout=null;return;}
+    if(this.scout){this.scout.remaining-=dt;if(this.scout.remaining<=0)this.scout=null;else this.reveal();}
+    if(this.pet)this.stepPet(dt);
+    if(c.profile.kit==='curse'){
+      const a=SKILLS.curse.aura,targets=c.enemies.filter(e=>e.alive&&c.canSee(e)&&distance(c.hero,e)<=a.range);
+      const canAura=c.canAct&&!this.pull&&!c.dash&&['idle','attack'].includes(c.command.kind)&&targets.length>0&&c.hero.mana-a.costPerSecond*dt>=this.reserve;
+      if(this.aura&&!canAura){this.aura=false;this.auraLock=a.restart;}
+      if(canAura&&this.auraLock<=0){this.aura=true;c.hero.mana-=a.costPerSecond*dt;for(const e of targets)c.hurt(e,(a.damage+e.maxHp*a.hpRatio)*dt,'W',false,'magic');}
+    }
+  }
+  private stepMissiles(dt:number){
+    const c=this.owner;
+    this.missiles=this.missiles.filter(m=>{
+      const cfg=m.kind==='hook'?SKILLS.curse.hook:SKILLS.frost.ultimate;
+      const length=Math.min(m.remaining,cfg.speed*dt),end={x:m.point.x+m.direction.x*length,y:m.point.y+m.direction.y*length};
+      const hit=c.enemies.filter(e=>e.alive).map(e=>({e,...alongSegment(m.point,end,e)})).filter(h=>h.distance<=cfg.radius+18).sort((a,b)=>a.t-b.t)[0]?.e;
+      m.remaining-=length;m.point=end;
+      if(hit){c.hurt(hit,cfg.damage,m.kind==='hook'?'Q':'R',true,'magic');applyCC(hit,'stunned',cfg.stun);
+        if(m.kind==='hook'&&c.canAct&&c.hero.rooted<=0){this.pull=towards(hit,c.hero,c.profile.stats.range);c.anchor={...this.pull};c.command={kind:'attack',targetId:hit.id};c.lastSeen={x:hit.x,y:hit.y};c.pending=null;}
+        return false;
+      }
+      return m.remaining>0;
+    });
+  }
+  private stepPet(dt:number){
+    const c=this.owner,p=this.pet!,cfg=SKILLS.flame.pet;p.remaining-=dt;p.cooldown=Math.max(0,p.cooldown-dt);
+    if(p.remaining<=0||p.hp<=0){this.pet=null;return;}
+    const direct=c.command.kind==='attack'?c.command.targetId:null;
+    const targets=c.enemies.filter(e=>e.alive&&c.canSee(e)&&distance(c.hero,e)<=cfg.leash);
+    const target=targets.find(e=>e.id===direct)??targets.sort((a,b)=>distance(p,a)-distance(p,b))[0];
+    const goal=distance(p,c.hero)>cfg.leash?c.hero:target??c.hero;
+    const reach=goal===c.hero?45:cfg.range,d=distance(p,goal);
+    if(d>reach){const next=towards(p,goal,Math.min(cfg.speed*dt,d-reach));p.x=next.x;p.y=next.y;}
+    else if(goal===target&&target&&p.cooldown<=0){c.hurt(target,cfg.damage,'곰',true,'magic');p.cooldown=cfg.interval;}
+  }
+}

@@ -77,7 +77,7 @@ test('switching champions keeps previous orders and independent HUD',async({page
   await page.mouse.move(p.sx,p.sy);await page.mouse.down();await page.mouse.move(p.x,p.y,{steps:8});await page.mouse.up();
  };
  await command(720,470);await choose('annie');
- await expect(page.locator('#champion-name')).toHaveText('애니');await expect(page.locator('#dash')).toBeDisabled();await expect(page.locator('#fury-text')).toContainText('420');
+ await expect(page.locator('#champion-name')).toHaveText('애니');await expect(page.locator('#dash')).toBeEnabled();await expect(page.locator('#dash span')).toHaveText('화염');await expect(page.locator('#fury-text')).toContainText('420');
  await command(720,470);await choose('ashe');
  await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.members[0].damage),{timeout:10000}).toBeGreaterThan(0);
  await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.members[1].damage),{timeout:10000}).toBeGreaterThan(0);
@@ -87,4 +87,23 @@ test('switching champions keeps previous orders and independent HUD',async({page
  expect(await page.evaluate(()=>(window as any).leagueDebug.members.map((m:any)=>m.elapsed))).toEqual(before);
  await page.locator('#resume').click();await choose('renekton');await expect(page.locator('#dash')).toBeEnabled();
  await page.screenshot({path:`test-results/squad-${info.project.name}.png`});
+});
+
+test('all three new kits accept touch aim and ultimate input',async({page,isMobile})=>{
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto('/');await expect(page.locator('body')).toHaveAttribute('data-ready','true');
+ const press=async(selector:string)=>{if(isMobile)await page.locator(selector).tap();else await page.locator(selector).click();};
+ const aim=async(selector:string)=>{
+  await press(selector);await expect(page.locator(selector)).toHaveClass(/armed/);
+  const point=await page.evaluate(()=>{const d=(window as any).leagueDebug,r=document.querySelector('canvas')!.getBoundingClientRect();return{x:r.left+d.hero.x-d.camera.x+80,y:r.top+d.hero.y-d.camera.y};});
+  if(isMobile)await page.touchscreen.tap(point.x,point.y);else await page.mouse.click(point.x,point.y);
+  await expect(page.locator(selector)).not.toHaveClass(/armed/);
+ };
+ await press('#retaliation');await expect(page.locator('#retaliation')).toHaveAttribute('aria-pressed','false');
+ await press('#champion-annie');await aim('#dash');await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.skillCooldowns.dash)).toBeGreaterThan(0);
+ await aim('#ultimate');await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.pet?.hp??0)).toBeGreaterThan(0);
+ await press('#champion-ashe');await aim('#dash');await aim('#ultimate');await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.skillCooldowns.ultimate)).toBeGreaterThan(0);
+ await press('#champion-amumu');await aim('#dash');await press('#ultimate');await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.skillCooldowns.ultimate)).toBeGreaterThan(0);
+ await press('#champion-renekton');await press('#dash');await expect(page.locator('#dash')).toHaveClass(/armed/);await press('#champion-annie');await expect(page.locator('#dash')).not.toHaveClass(/armed/);
+ expect(errors).toEqual([]);
 });

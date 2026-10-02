@@ -5,3 +5,5 @@
 #roster button[aria-pressed="true"]{border-color:#e2cd86;background:#38523a;box-shadow:0 0 0 1px #e2cd86}
 #roster b{font-family:Georgia,serif;font-size:22px;color:#d7ca95}#roster span{font-size:12px}#roster small{display:block;font-size:9px;color:#b9c9b4;margin-top:3px}
 @media(max-height:500px){#roster{right:10px;top:8px;grid-template-columns:repeat(2,100px);gap:4px}#roster button{padding:4px 7px;min-height:42px}}
+
+#retaliation[aria-pressed="true"]{border-color:#b57a61;color:#e9b193}.skill em{font-size:16px}

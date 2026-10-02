@@ -19,14 +19,14 @@ test('shared respawn and stun timers tick once for the whole squad',()=>{
  advance(s,2.1);assert.equal(e.alive,true);assert.equal(e.generation,1);
 });
 test('launched projectile survives move and selection, impacts only once',()=>{
- const s=new Squad(),a=s.members[1];a.hero.x=480;a.hero.y=470;a.attack('a');advance(s,.3);
+ const s=new Squad(),a=s.members[1];a.cooldown.q=99;a.hero.x=480;a.hero.y=470;a.attack('a');advance(s,.3);
  assert.equal(a.projectiles.length,1);assert.equal(a.damage,0);const cd=a.cooldown.attack;
  a.move({x:200,y:700});s.select(3);advance(s,.7);
  assert.ok(a.damage>0);assert.equal(a.projectiles.length,0);assert.ok(a.cooldown.attack<cd);
  const damage=a.damage;advance(s,1);assert.equal(a.damage,damage);
 });
 test('old projectile cannot hit a respawned target',()=>{
- const s=new Squad(),a=s.members[1];a.hero.x=480;a.hero.y=470;a.attack('a');advance(s,.3);
+ const s=new Squad(),a=s.members[1];a.cooldown.q=99;a.hero.x=480;a.hero.y=470;a.attack('a');advance(s,.3);
  a.move({x:200,y:700});const e=a.enemies[0];e.alive=false;e.hp=0;e.respawn=.01;
  advance(s,.8);assert.equal(e.generation,1);assert.equal(e.hp,e.maxHp);assert.equal(a.damage,0);
 });
