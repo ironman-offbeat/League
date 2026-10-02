@@ -1,10 +1,15 @@
 import Phaser from 'phaser';
-import { Combat } from './combat.ts';
+import { Squad } from './Squad.ts';
 import { RULES, distance } from './config.ts';
 import type { Point } from './config.ts';
 
 export class ArenaScene extends Phaser.Scene {
-  combat = new Combat();
+  squad = new Squad();
+  get combat() { return this.squad.selected; }
+  selectChampion(index: number, center = true) {
+    this.cancelGesture();
+    if (this.squad.select(index) && center) this.centerHero();
+  }
   paused = false;
   armed = false;
   onFrame: (scene: ArenaScene) => void = () => {};
@@ -27,6 +32,8 @@ export class ArenaScene extends Phaser.Scene {
     this.input.on('pointerdown',(p: Phaser.Input.Pointer) => {
       if (this.paused || this.gesture) return;
       const world = this.cameras.main.getWorldPoint(p.x,p.y);
+      const hit = this.squad.members.findIndex(c => distance(world,c.hero) < 36);
+      if (!this.armed && hit >= 0) this.selectChampion(hit, false);
       const mode = this.armed ? 'dash' : distance(world,this.combat.hero) < 43 ? 'hero' : 'pan';
       this.gesture = {mode,start:{x:p.x,y:p.y},world,camera:{x:this.cameras.main.scrollX,y:this.cameras.main.scrollY},pointer:p.id};
       this.aim = world;
@@ -50,7 +57,7 @@ export class ArenaScene extends Phaser.Scene {
   setPaused(value: boolean) { this.paused=value; this.accumulator=0; this.cancelGesture(); this.onFrame(this); }
   cancelGesture() { this.gesture=null; this.armed=false; this.aim=null; }
   centerHero() { this.cameras.main.centerOn(this.combat.hero.x+100,this.combat.hero.y-25); }
-  restartTraining() { this.combat=new Combat(); this.accumulator=0; this.cancelGesture(); this.centerHero(); this.notify('연습장을 초기화했습니다.'); }
+  restartTraining() { this.squad=new Squad(); this.accumulator=0; this.cancelGesture(); this.centerHero(); this.notify('연습장을 초기화했습니다.'); }
   dashToScreen(x: number,y: number) {
     const rect = this.game.canvas.getBoundingClientRect();
     if (x<rect.left || x>rect.right || y<rect.top || y>rect.bottom || this.paused) { this.cancelGesture(); return; }
@@ -77,11 +84,11 @@ export class ArenaScene extends Phaser.Scene {
     if (!this.actors) return;
     if (!this.paused) {
       this.accumulator+=Math.min(delta/1000,.1);
-      while(this.accumulator>=RULES.step) {this.combat.step(RULES.step);this.accumulator-=RULES.step;}
+      while(this.accumulator>=RULES.step) {this.squad.step(RULES.step);this.accumulator-=RULES.step;}
     }
     this.renderActors();
     this.renderGuide();
-    for(const event of this.combat.events.splice(0)) {
+    for(const event of this.squad.members.flatMap(c => c.events.splice(0))) {
       if(event.kind==='damage'||event.kind==='heal') {
         const text=this.add.text(event.point.x,event.point.y,`${event.kind==='heal'?'+':''}${Math.round(event.amount??0)}`,{fontFamily:'Georgia,serif',fontSize:'20px',color:event.kind==='heal'?'#93eaaa':'#f1d8a3',stroke:'#1b241f',strokeThickness:3}).setOrigin(.5).setDepth(10);
         this.tweens.add({targets:text,y:text.y-35,alpha:0,duration:700,onComplete:()=>text.destroy()});
@@ -106,20 +113,31 @@ export class ArenaScene extends Phaser.Scene {
       g.fillStyle(0x101a18);g.fillRoundedRect(e.x-31,e.y-48,62,7,2);g.fillStyle(0xc17b67);g.fillRect(e.x-30,e.y-47,60*(e.hp/e.maxHp),5);
       if(this.combat.command.kind==='attack'&&this.combat.command.targetId===e.id){g.lineStyle(2,0xefb47d,.9);g.strokeCircle(e.x,e.y,33);}
     });
-    const h=this.combat.hero;
+    for (const member of this.squad.members) {
+      for (const p of member.projectiles) { g.fillStyle(member.profile.color); g.fillCircle(p.x,p.y,5); }
+    }
+    for (const c of this.squad.members) {
+    const h=c.hero;
     g.fillStyle(0x0b1915,.6);g.fillEllipse(h.x+4,h.y+24,63,26);
-    if(this.combat.ultimateRemaining>0){g.fillStyle(0xdaa549,.09);g.fillCircle(h.x,h.y,RULES.ultimate.range);g.lineStyle(1,0xdaba64,.45);g.strokeCircle(h.x,h.y,49);}
-    g.lineStyle(2,0x81d8b0,.85);g.strokeEllipse(h.x,h.y+7,64,48);
-    const size=this.combat.ultimateRemaining>0?1.2:1;
+    if(c.ultimateRemaining>0){g.fillStyle(0xdaa549,.09);g.fillCircle(h.x,h.y,RULES.ultimate.range);g.lineStyle(1,0xdaba64,.45);g.strokeCircle(h.x,h.y,49);}
+    if(c===this.combat){g.lineStyle(2,0x81d8b0,.85);g.strokeEllipse(h.x,h.y+7,64,48);}
+    const size=c.ultimateRemaining>0?1.2:1;
     g.save();g.translateCanvas(h.x,h.y);g.rotateCanvas(h.facing);g.scaleCanvas(size,size);
+    if (c.profile.kit === 'fury') {
     g.fillStyle(0x456d53);g.fillTriangle(-12,-12,-42,0,-12,10);
     g.fillStyle(0x628564);g.fillEllipse(0,0,42,34);g.lineStyle(2,0xa6b77c);g.strokeEllipse(0,0,42,34);
     g.fillStyle(0x9ca774);g.fillRoundedRect(9,-9,25,18,5);g.fillStyle(0xe9db90);g.fillCircle(13,-8,3);g.fillCircle(13,8,3);
     g.lineStyle(5,0xa79865);g.lineBetween(-2,18,22,31);g.lineStyle(7,0xd1c397);g.beginPath();g.arc(22,15,23,.2,1.9);g.strokePath();
-    if(this.combat.pending){g.lineStyle(3,0xf1d28b,.8);g.beginPath();g.arc(0,0,49,-.7,.7);g.strokePath();}
+    } else {
+      g.fillStyle(c.profile.color);g.fillCircle(0,0,22);
+      g.lineStyle(3,0xe6e2bd);g.strokeCircle(0,0,22);g.lineBetween(4,0,32,0);
+      g.fillStyle(0x243d35);g.fillCircle(8,-7,3);g.fillCircle(8,7,3);
+    }
+    if(c.pending){g.lineStyle(3,0xf1d28b,.8);g.beginPath();g.arc(0,0,49,-.7,.7);g.strokePath();}
     g.restore();
     g.fillStyle(0x10251e);g.fillRect(h.x-29,h.y-43,58,6);g.fillStyle(0x89cca0);g.fillRect(h.x-28,h.y-42,56*h.hp/h.maxHp,4);
-    if(this.combat.command.kind==='recall'){g.lineStyle(3,0x83ced2,.8);g.strokeCircle(h.x,h.y,42+Math.sin(this.combat.elapsed*6)*4);}
+    if(c.command.kind==='recall'){g.lineStyle(3,0x83ced2,.8);g.strokeCircle(h.x,h.y,42+Math.sin(c.elapsed*6)*4);}
+    }
   }
   private renderGuide() {
     const g=this.guide;g.clear();
