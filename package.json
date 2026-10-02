@@ -1,0 +1,20 @@
+{
+  "name": "league-tactics",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22.18.0" },
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "node --test tests/combat.test.ts",
+    "test:browser": "playwright test"
+  },
+  "dependencies": { "phaser": "4.2.1" },
+  "devDependencies": {
+    "@playwright/test": "1.56.1",
+    "typescript": "5.9.3",
+    "vite": "7.1.7"
+  }
+}

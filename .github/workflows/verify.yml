@@ -1,0 +1,36 @@
+name: Verify game
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install exact direct dependencies
+        run: npm install --no-audit --no-fund
+      - name: Combat regression tests
+        run: npm test
+      - name: Type check and production build
+        run: npm run build
+      - name: Install test browsers
+        run: npx playwright install --with-deps chromium webkit
+      - name: Desktop and mobile browser verification
+        run: npm run test:browser
+      - name: Preserve review evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: league-review
+          path: |
+            test-results/
+            dist/
+            package-lock.json
+          retention-days: 7
