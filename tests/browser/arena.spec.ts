@@ -68,3 +68,23 @@ test('portrait blocks play, landscape recovers and cancelled gestures do not mov
   await page.locator('#dash').click();await page.locator('#dash').click();
   expect(await page.evaluate(()=>(window as any).leagueDebug.dashCooldown)).toBe(0);
 });
+
+test('switching champions keeps previous orders and independent HUD',async({page,isMobile},info)=>{
+ await page.goto('/');await expect(page.locator('body')).toHaveAttribute('data-ready','true');
+ const choose=async(id:string)=>{if(isMobile)await page.locator(`#champion-${id}`).tap();else await page.locator(`#champion-${id}`).click();};
+ const command=async(x:number,y:number)=>{
+  const p=await page.evaluate(({x,y})=>{const d=(window as any).leagueDebug;const r=document.querySelector('canvas')!.getBoundingClientRect();return{sx:r.left+d.hero.x-d.camera.x,sy:r.top+d.hero.y-d.camera.y,x:r.left+x-d.camera.x,y:r.top+y-d.camera.y};},{x,y});
+  await page.mouse.move(p.sx,p.sy);await page.mouse.down();await page.mouse.move(p.x,p.y,{steps:8});await page.mouse.up();
+ };
+ await command(720,470);await choose('annie');
+ await expect(page.locator('#champion-name')).toHaveText('애니');await expect(page.locator('#dash')).toBeDisabled();await expect(page.locator('#fury-text')).toContainText('420');
+ await command(720,470);await choose('ashe');
+ await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.members[0].damage),{timeout:10000}).toBeGreaterThan(0);
+ await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.members[1].damage),{timeout:10000}).toBeGreaterThan(0);
+ expect(await page.evaluate(()=>(window as any).leagueDebug.members[0].command)).toBe('attack');
+ await choose('amumu');await expect(page.locator('#hp-text')).toContainText('900');
+ await page.locator('#pause').click();const before=await page.evaluate(()=>(window as any).leagueDebug.members.map((m:any)=>m.elapsed));await page.waitForTimeout(300);
+ expect(await page.evaluate(()=>(window as any).leagueDebug.members.map((m:any)=>m.elapsed))).toEqual(before);
+ await page.locator('#resume').click();await choose('renekton');await expect(page.locator('#dash')).toBeEnabled();
+ await page.screenshot({path:`test-results/squad-${info.project.name}.png`});
+});
