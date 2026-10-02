@@ -27,3 +27,13 @@
 - package-lock.json 추가, CI는 npm ci로 의존성 버전을 고정합니다.
 
 현재 접속 주소: https://league.2hayoung.com
+
+## Four-champion command prototype — 2026-10-02
+
+- Local Node 24: 13 existing combat cases and 5 squad cases passed.
+- Local TypeScript check and Vite production build passed.
+- Local Chromium desktop/mobile landscape: 9 browser cases passed, 1 desktop touch-only case skipped.
+- New coverage: simultaneous independent orders, shared damage, ranged attack distance, once-per-frame shared timers, projectile persistence after movement/selection, stale projectile rejection after respawn, personal recall and unselected cooldowns.
+- Browser coverage now switches among all four champions, checks independent HUD and unavailable skills, confirms two unselected attackers keep dealing damage, and freezes every actor when paused.
+- WebKit verification runs in the PR's GitHub Actions workflow; consult the run result for the exact tested commit.
+- This is still a training arena. Other three full skill kits, enemy retaliation, champion death, lanes and match objectives remain unimplemented.

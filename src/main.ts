@@ -30,6 +30,7 @@ scene.onFrame=s=>{
   });
   el('hp-bar').style.width=`${c.hero.hp/c.hero.maxHp*100}%`;
   el('hp-text').textContent=`${Math.ceil(c.hero.hp)} / ${c.hero.maxHp}`;
+  el('fury-bar').style.background=fury?'#bc8b3c':'#5a9fce';
   el('fury-bar').style.width=`${fury?c.hero.fury:c.hero.mana/c.profile.mana*100}%`;
   el('fury-text').textContent=fury?`분노 ${Math.floor(c.hero.fury)} / 100`:`마나 ${Math.floor(c.hero.mana)} / ${c.profile.mana}`;
   el('damage').textContent=Math.round(c.damage).toLocaleString('ko-KR');

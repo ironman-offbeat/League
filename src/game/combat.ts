@@ -127,7 +127,10 @@ export class Combat {
       }
       return;
     }
-    if (distance(this.hero, this.profile.spawn) < 75) this.hero.hp = Math.min(this.hero.maxHp, this.hero.hp + this.hero.maxHp * 0.15 * dt);
+    if (distance(this.hero, this.profile.spawn) < 75) {
+      this.hero.hp = Math.min(this.hero.maxHp, this.hero.hp + this.hero.maxHp * 0.15 * dt);
+      this.hero.mana = Math.min(this.profile.mana, this.hero.mana + this.profile.mana * .15 * dt);
+    }
     if (this.command.kind === 'move') {
       this.travel(this.command.point, this.profile.stats.speed * dt);
       if (distance(this.hero, this.command.point) < 0.1) this.command = { kind: 'idle' };
@@ -173,7 +176,7 @@ export class Combat {
       return;
     }
     const nearby = this.enemies.filter(e => e.alive && e.visible && distance(this.hero,e) <= RULES.q.range);
-    const canW = this.profile.kit === 'fury' && this.cooldown.w <= 0 && distance(this.hero,target) <= this.profile.stats.range;
+    const canW = this.profile.kit === 'fury' && this.cooldown.w <= 0 && distance(this.hero,target) <= this.profile.stats.range + .001;
     if (this.profile.kit === 'fury' && this.cooldown.q <= 0 && nearby.length && (this.hero.hp / this.hero.maxHp <= 0.5 || !canW)) {
       const empowered = this.hero.fury >= 50;
       if (empowered) this.hero.fury -= 50;
