@@ -54,4 +54,4 @@ Vercel에서 이 저장소를 가져오면 `vercel.json` 설정을 사용합니�
 - [개발 단계와 완료 기준](docs/ROADMAP.md)
 - [검증 기록](docs/VERIFICATION.md)
 
-배포 주소는 실제 배포 완료 후 기록합니다.
+접속 주소: https://league.2hayoung.com

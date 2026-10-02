@@ -39,7 +39,11 @@ export class ArenaScene extends Phaser.Scene {
       }
     });
     this.input.on('pointerup',(p: Phaser.Input.Pointer) => this.release(p));
-    this.input.on('pointerupoutside',() => this.cancelGesture());
+    this.input.on('pointerupoutside',(p: Phaser.Input.Pointer) => {
+      // HUD releases also reach Phaser. Only cancel gestures begun on this canvas;
+      // otherwise releasing E immediately erases the aim state set by the HUD.
+      if (this.gesture?.pointer === p.id) this.cancelGesture();
+    });
     this.input.keyboard?.on('keydown-ESC',() => this.cancelGesture());
     this.game.events.emit('arena-ready',this);
   }
