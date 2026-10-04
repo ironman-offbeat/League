@@ -1,7 +1,7 @@
 # League development rules
 
 - User directs game design and performs acceptance QA; do implementation autonomously within approved scope.
-- Current scope is the four-champion level-one skill training arena, including optional stationary retaliation and death/respawn. Do not claim this is a complete MOBA.
+- Current scope is the four-champion level-one skill training arena and compact one-lane siege prototype (minions, one tower and nexus per team, match outcomes). Enemy champions, growth and equipment remain future work. Do not claim this is a complete MOBA.
 - Canonical design is docs/DESIGN.md. New numeric values are provisional balance settings, not proven values.
 - Keep simulation independent of Phaser rendering. Commands share one rules path; data belongs in config.
 - Explicit move overrides attack and cancels windup without resetting attack cooldown.
@@ -14,3 +14,5 @@
 - Preserve user work. No force pushes. Minimize deployments; publish a reviewed batch.
 - Use UTF-8, Korean player-facing text, and mobile landscape safe areas.
 - Do not delegate to sub-agents unless the user requests it.
+- User plans to replace all graphics with production art. Keep sprite/atlas/animation/effect/icon mappings in src/render; simulation must never depend on animation completion, texture size, render FPS or asset loading.
+- Graphics use stable entity identity and shared data-driven visual keys. Preserve placeholder fallback, pause, despawn cleanup and mode-reset cleanup when adding assets.

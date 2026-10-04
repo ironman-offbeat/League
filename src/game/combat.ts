@@ -1,3 +1,5 @@
+import { damageTarget, skillTarget } from './targets.ts';
+import type { Target, HitKind } from './targets.ts';
 import { Abilities } from './Abilities.ts';
 import { freshStatus, tickStatus, mitigate, applyCC } from './effects.ts';
 import type { Status, DamageType } from './effects.ts';
@@ -10,19 +12,24 @@ import { RULES, distance, clampPoint } from './config.ts';
 import type { Point } from './config.ts';
 
 export type Command = { kind: 'idle' } | { kind: 'move'; point: Point } | { kind: 'attack'; targetId: string } | { kind: 'return' } | { kind: 'recall'; remaining: number };
-export type Dummy = Point & Status & { magicResist:number; revealed:number; alert:number; aggro:string|null; attackCooldown:number; id: string; hp: number; maxHp: number; armor: number; alive: boolean; visible: boolean; respawn: number; stunned: number; generation: number };
-export type GameEvent = { kind: 'damage' | 'heal' | 'slash' | 'dash' | 'ultimate' | 'recall'; point: Point; amount?: number; source?: string };
+export type Dummy = Target;
+export type GameEvent = { kind: 'damage' | 'heal' | 'slash' | 'dash' | 'ultimate' | 'recall' | 'cast'; point: Point; amount?: number; source?: string; entityId?:string; visual?:string };
 export type PendingAttack = { targetId: string; remaining: number; empowered: boolean; useW: boolean };
 
 export class Combat {
   profile: Champion;
+  autoTargetAllowed:(target:Dummy)=>boolean=()=>true;
   abilities = new Abilities(this);
   respawnRemaining=0;
   life=0;
   get alive(){return this.hero.hp>0;}
   get canAct(){return this.alive&&this.hero.stunned<=0&&this.hero.airborne<=0;}
   canSee(e:Dummy){return e.visible||e.revealed>0;}
-  castSkill(slot:SkillSlot,point?:Point){return this.abilities.cast(slot,point);}
+  castSkill(slot:SkillSlot,point?:Point){
+    const cast=this.abilities.cast(slot,point);
+    if(cast)this.events.push({kind:'cast',point:{x:this.hero.x,y:this.hero.y},entityId:this.profile.id,visual:`skill.${this.profile.kit}.${slot}`});
+    return cast;
+  }
   receiveCC(kind:'stunned'|'rooted'|'airborne',seconds:number){
     if(!this.alive||seconds<=0)return;
     applyCC(this.hero,kind,seconds);this.cancelRecall();
@@ -35,7 +42,7 @@ export class Combat {
     const damage=mitigate(raw,type==='physical'?this.profile.armor:this.profile.magicResist);
     const absorbed=Math.min(this.hero.shield,damage);this.hero.shield-=absorbed;
     const lost=Math.min(this.hero.hp,damage-absorbed);this.hero.hp-=lost;
-    if(lost>0)this.events.push({kind:'damage',point:{x:this.hero.x,y:this.hero.y-45},amount:lost,source:'반격'});
+    if(lost>0)this.events.push({kind:'damage',point:{x:this.hero.x,y:this.hero.y-45},amount:lost,source:'반격',entityId:this.profile.id,visual:'hit.physical'});
     if(!this.alive){
       this.respawnRemaining=SKILLS.respawn;this.command={kind:'idle'};this.pending=null;this.dash=null;
       if(this.ultimateRemaining>0)this.hero.maxHp-=RULES.ultimate.health;
@@ -79,7 +86,7 @@ export class Combat {
   }
   attack(targetId: string) {
     if (!this.canAct || this.dash || this.abilities.pull) return false;
-    const target = this.enemies.find(e => e.id === targetId && e.alive && this.canSee(e));
+    const target = this.enemies.find(e => e.id === targetId && e.alive && !e.protected && this.canSee(e));
     if (!target) return false;
     this.command = { kind: 'attack', targetId };
     this.lastSeen = { x: target.x, y: target.y };
@@ -199,7 +206,7 @@ export class Combat {
     let target: Dummy | undefined;
     if (this.command.kind === 'attack') {
       const id = this.command.targetId;
-      target = this.enemies.find(e => e.id === id && e.alive);
+      target = this.enemies.find(e => e.id === id && e.alive && !e.protected);
       if (!target) { this.pending = null; this.command = { kind: 'return' }; return; }
       if (!this.canSee(target)) {
         this.pending = null;
@@ -209,7 +216,7 @@ export class Combat {
       }
       this.lastSeen = { x: target.x, y: target.y };
     } else {
-      target = this.enemies.filter(e => e.alive && this.canSee(e) && distance(e, this.anchor) <= this.profile.stats.anchorRadius).sort((a,b) => distance(this.hero,a)-distance(this.hero,b))[0];
+      target = this.enemies.filter(e => e.alive && !e.protected && this.autoTargetAllowed(e) && this.canSee(e) && distance(e, this.anchor) <= this.profile.stats.anchorRadius).sort((a,b) => distance(this.hero,a)-distance(this.hero,b))[0];
     }
     if (!target) { this.pending = null; return; }
     this.hero.facing = Math.atan2(target.y - this.hero.y, target.x - this.hero.x);
@@ -231,15 +238,15 @@ export class Combat {
       return;
     }
     if(this.abilities.auto(target))return;
-    const nearby = this.enemies.filter(e => e.alive && this.canSee(e) && distance(this.hero,e) <= RULES.q.range);
-    const canW = this.profile.kit === 'fury' && this.cooldown.w <= 0 && distance(this.hero,target) <= this.profile.stats.range + .001;
+    const nearby = this.enemies.filter(e => e.alive && skillTarget(e) && this.canSee(e) && distance(this.hero,e) <= RULES.q.range);
+    const canW = skillTarget(target) && this.profile.kit === 'fury' && this.cooldown.w <= 0 && distance(this.hero,target) <= this.profile.stats.range + .001;
     if (this.profile.kit === 'fury' && this.cooldown.q <= 0 && nearby.length && (this.hero.hp / this.hero.maxHp <= 0.5 || !canW)) {
       const empowered = this.hero.fury >= 50;
       if (empowered) this.hero.fury -= 50;
       else this.hero.fury = Math.min(100, this.hero.fury + Math.min(15, nearby.length * 5));
       for (const enemy of nearby) this.hurt(enemy, RULES.q.damage * (empowered ? 1.5 : 1), 'Q');
       const before = this.hero.hp;
-      this.hero.hp = Math.min(this.hero.maxHp, this.hero.hp + Math.min(100, nearby.length * RULES.q.heal) * (empowered ? 2 : 1));
+      this.hero.hp = Math.min(this.hero.maxHp, this.hero.hp + Math.min(100, nearby.reduce((sum,e)=>sum+(e.kind==='minion'?8:RULES.q.heal),0)) * (empowered ? 2 : 1));
       if (this.hero.hp > before) this.events.push({ kind: 'heal', point: { ...this.hero }, amount: this.hero.hp-before });
       this.events.push({ kind: 'slash', point: { ...this.hero } });
       this.cooldown.q = RULES.q.cooldown;
@@ -253,14 +260,14 @@ export class Combat {
     }
   }
   private basicHit(target: Dummy, raw: number, source: string) {
-    if (!this.profile.projectileSpeed) { this.hurt(target, raw, source);this.abilities.onBasicHit(target); return; }
+    if (!this.profile.projectileSpeed) { this.hurt(target, raw, source, true, 'physical', 'basic');this.abilities.onBasicHit(target); return; }
     this.projectiles.push({ x:this.hero.x, y:this.hero.y, target, generation:target.generation, damage:raw });
   }
   private stepProjectiles(dt: number) {
     this.projectiles = this.projectiles.filter(p => {
       if (!p.target.alive || p.target.generation !== p.generation) return false;
       const d = distance(p, p.target), travel = this.profile.projectileSpeed * dt;
-      if (d <= travel) { this.hurt(p.target, p.damage, '기본 공격');this.abilities.onBasicHit(p.target); return false; }
+      if (d <= travel) { this.hurt(p.target, p.damage, '기본 공격', true, 'physical', 'basic');this.abilities.onBasicHit(p.target); return false; }
       p.x += (p.target.x-p.x)/d*travel; p.y += (p.target.y-p.y)/d*travel;
       return true;
     });
@@ -275,12 +282,13 @@ export class Combat {
     this.hero.x += (point.x-this.hero.x)*scale;
     this.hero.y += (point.y-this.hero.y)*scale;
   }
-  hurt(target: Dummy, raw: number, source: string, show = true, type:DamageType='physical') {
+  hurt(target: Dummy, raw: number, source: string, show = true, type:DamageType='physical', kind:HitKind='skill') {
     if(!target.alive)return;
+    const amount=damageTarget(target,raw*(type==='magic'&&target.marked>0?1+SKILLS.curse.passive.amplify:1),type,kind);
+    if(!amount)return;
     target.alert=SKILLS.retaliation.alert;target.aggro=this.profile.id;
-    const amount = Math.min(target.hp, mitigate(raw*(type==='magic'&&target.marked>0?1+SKILLS.curse.passive.amplify:1),type==='physical'?target.armor:target.magicResist));
-    target.hp -= amount; this.damage += amount; this.lastCombat = this.elapsed;
-    if (show) this.events.push({ kind: 'damage', point: { x: target.x, y: target.y-40 }, amount, source });
-    if (target.hp <= 0) { target.hp=0; target.alive=false; target.respawn=RULES.dummy.respawn; }
+    this.damage += amount; this.lastCombat = this.elapsed;
+    if (show) this.events.push({ kind: 'damage', point: { x: target.x, y: target.y-40 }, amount, source, visual:`hit.${type}` });
+
   }
 }
