@@ -1,7 +1,7 @@
 # League development rules
 
 - User directs game design and performs acceptance QA; do implementation autonomously within approved scope.
-- Current scope is the four-champion command prototype: shared targets, independent orders and basic attacks; only the fury fighter has a complete training kit. Do not claim this is a complete MOBA.
+- Current scope is the four-champion level-one skill training arena, including optional stationary retaliation and death/respawn. Do not claim this is a complete MOBA.
 - Canonical design is docs/DESIGN.md. New numeric values are provisional balance settings, not proven values.
 - Keep simulation independent of Phaser rendering. Commands share one rules path; data belongs in config.
 - Explicit move overrides attack and cancels windup without resetting attack cooldown.

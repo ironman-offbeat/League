@@ -1,17 +1,21 @@
 import Phaser from 'phaser';
+import type { SkillSlot } from './skillConfig.ts';
+import { SKILLS } from './skillConfig.ts';
 import { Squad } from './Squad.ts';
 import { RULES, distance } from './config.ts';
 import type { Point } from './config.ts';
 
 export class ArenaScene extends Phaser.Scene {
-  squad = new Squad();
+  squad = new Squad(true);
   get combat() { return this.squad.selected; }
   selectChampion(index: number, center = true) {
     this.cancelGesture();
     if (this.squad.select(index) && center) this.centerHero();
   }
   paused = false;
-  armed = false;
+  aimSlot:SkillSlot|null=null;
+  get armed(){return this.aimSlot!==null;}
+  armSkill(slot:SkillSlot){const active=this.aimSlot===slot;this.cancelGesture();if(!active)this.aimSlot=slot;}
   onFrame: (scene: ArenaScene) => void = () => {};
   notify: (text: string) => void = () => {};
   private accumulator = 0;
@@ -55,18 +59,18 @@ export class ArenaScene extends Phaser.Scene {
     this.game.events.emit('arena-ready',this);
   }
   setPaused(value: boolean) { this.paused=value; this.accumulator=0; this.cancelGesture(); this.onFrame(this); }
-  cancelGesture() { this.gesture=null; this.armed=false; this.aim=null; }
+  cancelGesture() { this.gesture=null; this.aimSlot=null; this.aim=null; }
   centerHero() { this.cameras.main.centerOn(this.combat.hero.x+100,this.combat.hero.y-25); }
-  restartTraining() { this.squad=new Squad(); this.accumulator=0; this.cancelGesture(); this.centerHero(); this.notify('연습장을 초기화했습니다.'); }
-  dashToScreen(x: number,y: number) {
+  restartTraining() { this.squad=new Squad(this.squad.retaliation); this.accumulator=0; this.cancelGesture(); this.centerHero(); this.notify('연습장을 초기화했습니다.'); }
+  dashToScreen(x: number,y: number,slot:SkillSlot='manual') {
     const rect = this.game.canvas.getBoundingClientRect();
     if (x<rect.left || x>rect.right || y<rect.top || y>rect.bottom || this.paused) { this.cancelGesture(); return; }
     const p=this.cameras.main.getWorldPoint((x-rect.left)*this.scale.width/rect.width,(y-rect.top)*this.scale.height/rect.height);
-    this.doDash(p);
+    this.doDash(p,slot);
   }
-  private doDash(point: Point) {
-    this.armed=false;
-    this.notify(this.combat.castDash(point)?'돌진! 도착 지점에서 자동 전투를 재개합니다.':'돌진 방향 또는 재사용 대기시간을 확인하세요.');
+  private doDash(point: Point,slot:SkillSlot=this.aimSlot??'manual') {
+    this.aimSlot=null;
+    this.notify(this.combat.castSkill(slot,point)?`${this.combat.abilities.presentation(slot).name} 사용`:'마나·상태·재사용 대기시간을 확인하세요.');
   }
   private release(p: Phaser.Input.Pointer) {
     const gesture=this.gesture;
@@ -76,7 +80,7 @@ export class ArenaScene extends Phaser.Scene {
     if (gesture.mode==='dash') { this.doDash(point); return; }
     if (gesture.mode==='pan') return;
     if (distance(gesture.start,{x:p.x,y:p.y})<8) { this.notify('선택됨 · 지면이나 적에게 끌어 명령을 내리세요.'); return; }
-    const enemy=this.combat.enemies.find(e=>e.alive&&e.visible&&distance(e,point)<40);
+    const enemy=this.combat.enemies.find(e=>e.alive&&this.combat.canSee(e)&&distance(e,point)<40);
     if (enemy) { if(this.combat.attack(enemy.id)) this.notify('직접 공격 · 전진 한계를 넘어 대상을 추격합니다.'); }
     else if(this.combat.move(point)) this.notify('이동 명령 · 추격을 취소하고 목적지로 이동합니다.');
   }
@@ -103,8 +107,8 @@ export class ArenaScene extends Phaser.Scene {
   private renderActors() {
     const g=this.actors;g.clear();
     this.combat.enemies.forEach((e,i)=>{
-      const label=this.labels[i];label.setPosition(e.x,e.y-69);
-      label.setText(e.alive?(e.stunned>0?'기절':'훈련 대상'): `${Math.max(1,Math.ceil(e.respawn))}초 후 재생성`);
+      const label=this.labels[i];label.setVisible(this.combat.canSee(e));if(!this.combat.canSee(e))return;label.setPosition(e.x,e.y-69);
+      label.setText(e.alive?(e.stunned>0?'기절':e.rooted>0?'속박':e.slowRemaining>0?'둔화':e.marked>0?'저주':'훈련 대상'): `${Math.max(1,Math.ceil(e.respawn))}초 후 재생성`);
       g.fillStyle(0x101e1a,.5);g.fillEllipse(e.x+3,e.y+18,57,23);
       if(!e.alive){g.lineStyle(1,0x7e6e54,.5);g.strokeCircle(e.x,e.y,20);return;}
       g.lineStyle(5,0x6c5040);g.lineBetween(e.x,e.y-20,e.x,e.y+25);g.lineBetween(e.x-23,e.y-7,e.x+23,e.y-7);
@@ -113,11 +117,23 @@ export class ArenaScene extends Phaser.Scene {
       g.fillStyle(0x101a18);g.fillRoundedRect(e.x-31,e.y-48,62,7,2);g.fillStyle(0xc17b67);g.fillRect(e.x-30,e.y-47,60*(e.hp/e.maxHp),5);
       if(this.combat.command.kind==='attack'&&this.combat.command.targetId===e.id){g.lineStyle(2,0xefb47d,.9);g.strokeCircle(e.x,e.y,33);}
     });
+    for(const attack of this.squad.counterattacks.values()){
+      const p=attack.pet??attack.actor.hero;
+      g.lineStyle(2,0xef856b,.65);g.lineBetween(attack.enemy.x,attack.enemy.y,p.x,p.y);g.strokeCircle(p.x,p.y,29);
+    }
     for (const member of this.squad.members) {
+      const a=member.abilities;
+      for(const m of a.missiles){g.fillStyle(member.profile.color);g.fillCircle(m.point.x,m.point.y,m.kind==='arrow'?10:6);}
+      if(a.scout){g.lineStyle(2,0x86c9ec,.6);g.strokeCircle(a.scout.x,a.scout.y,SKILLS.frost.scout.radius);}
+      if(a.pet){const p=a.pet;g.fillStyle(0xa47258);g.fillRoundedRect(p.x-22,p.y-24,44,46,12);g.fillCircle(p.x-16,p.y-24,10);g.fillCircle(p.x+16,p.y-24,10);g.fillStyle(0xffd491);g.fillCircle(p.x-8,p.y-10,3);g.fillCircle(p.x+8,p.y-10,3);g.fillStyle(0x89cca0);g.fillRect(p.x-22,p.y-40,44*p.hp/SKILLS.flame.pet.hp,4);}
+      if(a.aura){g.lineStyle(2,0x88b99d,.6);g.strokeCircle(member.hero.x,member.hero.y,SKILLS.curse.aura.range);}
+
       for (const p of member.projectiles) { g.fillStyle(member.profile.color); g.fillCircle(p.x,p.y,5); }
     }
     for (const c of this.squad.members) {
     const h=c.hero;
+    if(!c.alive){g.lineStyle(2,0x8c8a83,.6);g.strokeCircle(h.x,h.y,23);continue;}
+    if(h.shield>0){g.lineStyle(3,0x88cbed,.8);g.strokeCircle(h.x,h.y,34);}
     g.fillStyle(0x0b1915,.6);g.fillEllipse(h.x+4,h.y+24,63,26);
     if(c.ultimateRemaining>0){g.fillStyle(0xdaa549,.09);g.fillCircle(h.x,h.y,RULES.ultimate.range);g.lineStyle(1,0xdaba64,.45);g.strokeCircle(h.x,h.y,49);}
     if(c===this.combat){g.lineStyle(2,0x81d8b0,.85);g.strokeEllipse(h.x,h.y+7,64,48);}
@@ -146,7 +162,7 @@ export class ArenaScene extends Phaser.Scene {
     g.lineStyle(1,0xe4cb80,.5);g.strokeCircle(a.x,a.y,7);
     if(this.combat.command.kind==='move'||this.combat.command.kind==='return'){g.lineStyle(2,0x96d8ad,.45);g.lineBetween(h.x,h.y,a.x,a.y);g.strokeCircle(a.x,a.y,13);}
     if((this.gesture?.mode==='hero'||this.gesture?.mode==='dash'||this.armed)&&this.aim){g.lineStyle(2,this.armed?0xf2d185:0xa1dfc1,.9);g.lineBetween(h.x,h.y,this.aim.x,this.aim.y);g.strokeCircle(this.aim.x,this.aim.y,16);}
-    if(this.armed){g.lineStyle(1,0xe3ca89,.5);g.strokeCircle(h.x,h.y,RULES.dash.range);}
+    if(this.armed){g.lineStyle(1,0xe3ca89,.5);g.strokeCircle(h.x,h.y,this.combat.abilities.presentation(this.aimSlot??'manual').range);}
   }
   private drawMap() {
     const g=this.add.graphics();const w=RULES.world.width,h=RULES.world.height;
