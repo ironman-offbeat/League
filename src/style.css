@@ -16,3 +16,5 @@
 
 .skill b img{width:30px;height:30px;object-fit:contain}#roster b img{width:26px;height:26px;object-fit:contain}
 .portrait img{width:45px;height:45px;object-fit:contain}
+.match-summary{display:flex;gap:16px;align-items:center;justify-content:space-between}#team-gold{color:#e2c67f;font-size:12px}
+.bar.experience{margin-top:3px;height:10px;border-color:#47677b}.bar.experience i{background:#527fba}.bar.experience span{font-size:8px;line-height:8px}

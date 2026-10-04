@@ -28,14 +28,18 @@ scene.onFrame=s=>{
   if(match){
     const time=`${Math.floor(match.elapsed/60).toString().padStart(2,'0')}:${Math.floor(match.elapsed%60).toString().padStart(2,'0')}`;
     el('match-clock').textContent=time;
+    el('team-gold').textContent=`팀 골드 ${Math.floor(match.economy.blue.gold+1e-8)}`;
     const tower=match.structure('red','tower'),blue=match.structure('blue','nexus'),red=match.structure('red','nexus');
     el('match-objective').textContent=tower.alive?`적 타워 ${Math.ceil(tower.hp)} · 미니언과 함께 공성`:`적 넥서스 ${Math.ceil(red.hp)} · 파괴하면 승리`;
     el('match-wave').textContent=`아군 넥서스 ${Math.ceil(blue.hp)} · ${match.wave}차 출발 · 증원 ${Math.max(0,Math.ceil(match.nextWave-match.elapsed))}초`;
-    if(match.result){el('result-title').textContent={victory:'승리!',defeat:'패배',draw:'무승부'}[match.result];el('result-summary').textContent=`${time} · ${match.wave}차 미니언 · 총 피해 ${Math.round(match.members.reduce((sum,m)=>sum+m.damage,0)).toLocaleString('ko-KR')} · ${match.result==='victory'?'적 넥서스를 파괴했습니다.':match.result==='defeat'?'아군 넥서스가 파괴되었습니다.':'두 넥서스가 동시에 파괴되었습니다.'}`;}
+    if(match.result){el('result-title').textContent={victory:'승리!',defeat:'패배',draw:'무승부'}[match.result];el('result-summary').textContent=`${time} · ${match.wave}차 미니언 · 획득 골드 ${Math.floor(match.economy.blue.earned)} · 총 피해 ${Math.round(match.members.reduce((sum,m)=>sum+m.damage,0)).toLocaleString('ko-KR')} · ${match.result==='victory'?'적 넥서스를 파괴했습니다.':match.result==='defeat'?'아군 넥서스가 파괴되었습니다.':'두 넥서스가 동시에 파괴되었습니다.'}`;}
   }
   const fury=c.profile.kit==='fury';
   el('champion-name').textContent=c.profile.name;
-  el('champion-status').textContent=c.profile.kit==='flame'?`불꽃 ${c.abilities.stacks}/3`:c.abilities.haste>0?'공속 강화':c.abilities.aura?'눈물 활성':'Lv. 1';
+  el('champion-status').textContent=`Lv. ${c.progression.level}${c.profile.kit==='flame'?` · 불꽃 ${c.abilities.stacks}/3`:''}`;
+  el('xp-track').hidden=!match;
+  el('xp-bar').style.width=`${c.progression.capped?100:c.progression.xp/c.progression.required*100}%`;
+  el('xp-text').textContent=c.progression.capped?'최대 레벨':`XP ${Math.floor(c.progression.xp)} / ${c.progression.required}`;
   const portrait=el('portrait').querySelector('span')!;
   if(portrait.dataset.visual!==c.profile.id){portrait.dataset.visual=c.profile.id;portrait.textContent=c.profile.symbol;const icon=ASSETS.icons[`champion.${c.profile.id}`];if(icon){const image=new Image();image.src=icon;image.alt='';image.onload=()=>{if(portrait.dataset.visual===c.profile.id)portrait.replaceChildren(image);};}}
   el('portrait').setAttribute('aria-label',`${c.profile.name}에게 카메라 이동`);
@@ -44,14 +48,14 @@ scene.onFrame=s=>{
   el('retaliation').setAttribute('aria-pressed',String(s.squad.retaliation));
   s.squad.members.forEach((m,i)=>{
     const b=el(`champion-${m.profile.id}`);b.setAttribute('aria-pressed',String(i===s.squad.selectedIndex));
-    const names={idle:'대기',move:'이동',attack:'공격',return:'복귀',recall:'귀환'};
+    const names={idle:'대기',move:'이동',attack:'공격',attackMove:'전진 공격',recall:'귀환'};
     b.querySelector('small')!.textContent=m.alive?`HP ${Math.ceil(m.hero.hp)} · ${names[m.command.kind]}`:`부활 ${Math.ceil(m.respawnRemaining)}초`;
   });
   el('hp-bar').style.width=`${c.hero.hp/c.hero.maxHp*100}%`;
   el('hp-text').textContent=`${Math.ceil(c.hero.hp)} / ${c.hero.maxHp}`;
   el('fury-bar').style.background=fury?'#bc8b3c':'#5a9fce';
-  el('fury-bar').style.width=`${fury?c.hero.fury:c.hero.mana/c.profile.mana*100}%`;
-  el('fury-text').textContent=fury?`분노 ${Math.floor(c.hero.fury)} / 100`:`마나 ${Math.floor(c.hero.mana)} / ${c.profile.mana}`;
+  el('fury-bar').style.width=`${fury?c.hero.fury:c.hero.mana/c.maxMana*100}%`;
+  el('fury-text').textContent=fury?`분노 ${Math.floor(c.hero.fury)} / 100`:`마나 ${Math.floor(c.hero.mana)} / ${c.maxMana}`;
   el('damage').textContent=Math.round(c.damage).toLocaleString('ko-KR');
   for(const [id,slot,cdId] of [['dash','manual','dash-cd'],['ultimate','ultimate','ult-cd']] as const){
     const p=c.abilities.presentation(slot),button=el<HTMLButtonElement>(id),cd=c.cooldown[slot==='manual'?'dash':'ultimate'];
@@ -59,12 +63,12 @@ scene.onFrame=s=>{
     const key=button.querySelector('b')!;
     if(key.dataset.visual!==iconId){key.dataset.visual=iconId;key.textContent=p.key;if(icon){const image=new Image();image.src=icon;image.alt='';image.onload=()=>{if(key.dataset.visual===iconId)key.replaceChildren(image);};}}
     button.querySelector('span')!.textContent=p.name;button.querySelector('small')!.textContent=p.hint;
-    el(cdId).textContent=!c.alive?'부활 중':cd>0?Math.ceil(cd).toString():c.hero.mana<p.cost?'마나 부족':'';
+    el(cdId).textContent=slot==='ultimate'&&!c.progression.ultimateUnlocked?'Lv. 4 해금':!c.alive?'부활 중':cd>0?Math.ceil(cd).toString():c.hero.mana<p.cost?'마나 부족':'';
     button.disabled=s.blocked||!c.abilities.canCast(slot);button.classList.toggle('armed',s.aimSlot===slot);
     button.setAttribute('aria-label',`${p.name} ${p.key}`);
   }
   el<HTMLButtonElement>('recall').disabled=s.blocked||!c.canAct;
-  const names={idle:'대기 · 자동 전투',move:'이동 · 공격보다 이동 우선',attack:'직접 공격 · 전진 한계 무시',return:'기준 지점으로 복귀',recall:'귀환 중'};
+  const names={idle:'대기 · 자동 전투',move:'이동 · 공격보다 이동 우선',attack:'전진 공격 · 지정 대상 우선',attackMove:'전진 공격 · 명령 위치로 이동',recall:'귀환 중'};
   el('command-label').textContent=!c.alive?`부활까지 ${c.respawnRemaining.toFixed(1)}초`:c.hero.shield>0?`보호막 ${Math.ceil(c.hero.shield)} · ${names[c.command.kind]}`:c.command.kind==='recall'?`귀환 중 · ${c.command.remaining.toFixed(1)}초`:names[c.command.kind];
   for(const key of ['move','attack','dash'] as const) el(`goal-${key}`).classList.toggle('done',c.completed[key]);
 };
@@ -108,4 +112,4 @@ document.addEventListener('contextmenu',e=>e.preventDefault());
 window.addEventListener('keydown',e=>{if(e.repeat)return;if(e.code==='Space'){e.preventDefault();manualPause=!manualPause;syncPause();}if(e.code==='Escape'){skillDrag=null;scene.cancelGesture();}});
 
 // Read-only diagnostics for repeatable browser verification, no mutation shortcuts.
-Object.defineProperty(window,'leagueDebug',{get:()=>({visuals:scene.visualCounts,mode:scene.match?'lane':'training',match:scene.match?{elapsed:scene.match.elapsed,wave:scene.match.wave,result:scene.match.result,units:scene.match.units.map(u=>({...u}))}:null,selected:scene.combat.profile.id,retaliation:scene.squad.retaliation,skillCooldowns:{...scene.combat.cooldown},respawn:scene.combat.respawnRemaining,stacks:scene.combat.abilities.stacks,pet:scene.combat.abilities.pet?{...scene.combat.abilities.pet}:null,members:scene.squad.members.map(c=>({id:c.profile.id,hero:{...c.hero},command:c.command.kind,damage:c.damage,elapsed:c.elapsed})),ready:document.body.dataset.ready==='true',paused:scene.paused,hero:{...scene.combat.hero},command:scene.combat.command.kind,damage:scene.combat.damage,dashCooldown:scene.combat.cooldown.dash,elapsed:scene.combat.elapsed,enemies:scene.combat.enemies.map(e=>({...e})),camera:{x:scene.cameras.main?.scrollX??0,y:scene.cameras.main?.scrollY??0},completed:{...scene.combat.completed}})});
+Object.defineProperty(window,'leagueDebug',{get:()=>({visuals:scene.visualCounts,mode:scene.match?'lane':'training',match:scene.match?{elapsed:scene.match.elapsed,wave:scene.match.wave,result:scene.match.result,gold:scene.match.economy.blue.gold,earnedGold:scene.match.economy.blue.earned,units:scene.match.units.map(u=>({...u}))}:null,selected:scene.combat.profile.id,retaliation:scene.squad.retaliation,skillCooldowns:{...scene.combat.cooldown},respawn:scene.combat.respawnRemaining,stacks:scene.combat.abilities.stacks,pet:scene.combat.abilities.pet?{...scene.combat.abilities.pet}:null,members:scene.squad.members.map(c=>({id:c.profile.id,level:c.progression.level,xp:c.progression.xp,anchor:{...c.anchor},hero:{...c.hero},command:c.command.kind,damage:c.damage,elapsed:c.elapsed})),ready:document.body.dataset.ready==='true',paused:scene.paused,hero:{...scene.combat.hero},anchor:{...scene.combat.anchor},level:scene.combat.progression.level,xp:scene.combat.progression.xp,command:scene.combat.command.kind,damage:scene.combat.damage,dashCooldown:scene.combat.cooldown.dash,elapsed:scene.combat.elapsed,enemies:scene.combat.enemies.map(e=>({...e})),camera:{x:scene.cameras.main?.scrollX??0,y:scene.cameras.main?.scrollY??0},completed:{...scene.combat.completed}})});

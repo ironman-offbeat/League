@@ -33,13 +33,13 @@ test('recall can be cancelled by movement, and completed recall returns to base'
   const c=new Combat();c.hero.x=1200;c.recall();advance(c,2);c.move({x:1100,y:700});advance(c,3);assert.notEqual(c.hero.x,RULES.spawn.x);
   c.recall();advance(c,4.1);assert.deepEqual({x:c.hero.x,y:c.hero.y},RULES.spawn);
 });
-test('lost target is pursued only to last seen point, then anchor return',()=>{
+test('lost target is pursued only to last seen point, then ordered destination',()=>{
   const c=new Combat();c.attack('a');advance(c,.1);c.enemies[0].visible=false;c.enemies[0].x=1400;advance(c,2);
-  assert.ok(c.hero.x<800);assert.equal(c.damage,0);advance(c,4);assert.ok(distance(c.hero,RULES.spawn)<1);
+  assert.ok(c.hero.x<800);assert.equal(c.damage,0);advance(c,4);assert.ok(distance(c.hero,{x:720,y:470})<1);
 });
-test('dead forced target does not switch to another nearby enemy before returning',()=>{
+test('dead forced target continues forward to the ordered location instead of the old anchor',()=>{
   const c=new Combat();c.hero.x=680;c.hero.y=470;c.attack('a');c.enemies[0].alive=false;c.enemies[0].respawn=10;c.step(RULES.step);
-  assert.equal(c.command.kind,'return');assert.equal(c.damage,0);advance(c,.5);assert.ok(c.hero.x<680);
+  assert.equal(c.command.kind,'attackMove');assert.equal(c.damage,0);advance(c,.5);assert.ok(distance(c.hero,{x:720,y:470})<.001);assert.deepEqual(c.anchor,{x:720,y:470});
 });
 test('low-health empowered Q consumes fury and heals through common event stream',()=>{
   const c=new Combat();c.hero.x=665;c.hero.y=470;c.hero.hp=200;c.hero.fury=60;c.lastCombat=0;c.attack('a');c.step(RULES.step);

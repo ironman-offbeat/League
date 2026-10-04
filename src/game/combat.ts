@@ -10,14 +10,27 @@ import { CHAMPIONS } from './champions.ts';
 import type { Champion } from './champions.ts';
 import { RULES, distance, clampPoint } from './config.ts';
 import type { Point } from './config.ts';
+import { Progression, PROGRESSION } from './progression.ts';
 
-export type Command = { kind: 'idle' } | { kind: 'move'; point: Point } | { kind: 'attack'; targetId: string } | { kind: 'return' } | { kind: 'recall'; remaining: number };
+export type Command = { kind: 'idle' } | { kind: 'move'; point: Point } | { kind: 'attack'; targetId: string; generation:number; point:Point } | { kind:'attackMove';point:Point } | { kind: 'recall'; remaining: number };
 export type Dummy = Target;
-export type GameEvent = { kind: 'damage' | 'heal' | 'slash' | 'dash' | 'ultimate' | 'recall' | 'cast'; point: Point; amount?: number; source?: string; entityId?:string; visual?:string };
+export type GameEvent = { kind: 'damage' | 'heal' | 'slash' | 'dash' | 'ultimate' | 'recall' | 'cast' | 'levelUp'; point: Point; amount?: number; source?: string; entityId?:string; visual?:string };
 export type PendingAttack = { targetId: string; remaining: number; empowered: boolean; useW: boolean };
 
 export class Combat {
   profile: Champion;
+  progression=new Progression();
+  get stats(){const n=this.progression.level-1;return {...this.profile.stats,hp:this.profile.stats.hp+this.profile.growth.hp*n,attack:this.profile.stats.attack+this.profile.growth.attack*n,attackInterval:this.profile.stats.attackInterval/(1+n*PROGRESSION.attackSpeedPerLevel)};}
+  get maxMana(){return this.profile.mana+this.profile.growth.mana*(this.progression.level-1);}
+  get armor(){return this.profile.armor+this.profile.growth.armor*(this.progression.level-1);}
+  get magicResist(){return this.profile.magicResist+this.profile.growth.magicResist*(this.progression.level-1);}
+  gainExperience(amount:number){
+    const gained=this.progression.gain(amount);if(!gained)return;
+    const health=this.profile.growth.hp*gained,mana=this.profile.growth.mana*gained;
+    this.hero.maxHp+=health;
+    if(this.alive){this.hero.hp+=health;this.hero.mana=Math.min(this.maxMana,this.hero.mana+mana);}
+    this.events.push({kind:'levelUp',point:{x:this.hero.x,y:this.hero.y},amount:this.progression.level,entityId:this.profile.id,visual:'level.up'});
+  }
   autoTargetAllowed:(target:Dummy)=>boolean=()=>true;
   abilities = new Abilities(this);
   respawnRemaining=0;
@@ -39,12 +52,12 @@ export class Combat {
   receiveDamage(raw:number,type:DamageType='physical'){
     if(!this.alive)return 0;
     this.cancelRecall();this.lastCombat=this.elapsed;
-    const damage=mitigate(raw,type==='physical'?this.profile.armor:this.profile.magicResist);
+    const damage=mitigate(raw,type==='physical'?this.armor:this.magicResist);
     const absorbed=Math.min(this.hero.shield,damage);this.hero.shield-=absorbed;
     const lost=Math.min(this.hero.hp,damage-absorbed);this.hero.hp-=lost;
     if(lost>0)this.events.push({kind:'damage',point:{x:this.hero.x,y:this.hero.y-45},amount:lost,source:'반격',entityId:this.profile.id,visual:'hit.physical'});
     if(!this.alive){
-      this.respawnRemaining=SKILLS.respawn;this.command={kind:'idle'};this.pending=null;this.dash=null;
+      this.respawnRemaining=this.progression.enabled?PROGRESSION.respawnBase+this.progression.level*PROGRESSION.respawnPerLevel+(this.elapsed>=PROGRESSION.lateRespawnAt?PROGRESSION.lateRespawnBonus:0):SKILLS.respawn;this.command={kind:'idle'};this.pending=null;this.dash=null;
       if(this.ultimateRemaining>0)this.hero.maxHp-=RULES.ultimate.health;
       this.ultimateRemaining=0;this.hero.shield=0;this.hero.shieldRemaining=0;this.hero.fury=0;
       this.abilities.reset();Object.assign(this.hero,freshStatus());
@@ -84,11 +97,13 @@ export class Combat {
     this.completed.move = true;
     return true;
   }
-  attack(targetId: string) {
+  attack(targetId: string, point?:Point) {
     if (!this.canAct || this.dash || this.abilities.pull) return false;
     const target = this.enemies.find(e => e.id === targetId && e.alive && !e.protected && this.canSee(e));
     if (!target) return false;
-    this.command = { kind: 'attack', targetId };
+    // Capture the ordered location, not the target's future/death position.
+    this.anchor = clampPoint(point??target);
+    this.command = { kind: 'attack', targetId, generation:target.generation, point:{...this.anchor} };
     this.lastSeen = { x: target.x, y: target.y };
     this.pending = null;
     return true;
@@ -110,7 +125,7 @@ export class Combat {
     return true;
   }
   castUltimate() {
-    if (!this.canAct || this.profile.kit !== 'fury' || this.cooldown.ultimate > 0) return false;
+    if (!this.canAct || this.profile.kit !== 'fury' || this.cooldown.ultimate > 0 || !this.progression.ultimateUnlocked) return false;
     this.cancelRecall();
     this.hero.maxHp += RULES.ultimate.health;
     this.hero.hp += RULES.ultimate.health;
@@ -137,7 +152,7 @@ export class Combat {
     this.abilities.step(dt);
     if(!this.alive){
       this.respawnRemaining=Math.max(0,this.respawnRemaining-dt);
-      if(!this.respawnRemaining){this.life++;Object.assign(this.hero,this.profile.spawn,freshStatus(),{hp:this.hero.maxHp,mana:this.profile.mana,fury:0,shield:0,shieldRemaining:0});this.anchor={...this.profile.spawn};}
+      if(!this.respawnRemaining){this.life++;Object.assign(this.hero,this.profile.spawn,freshStatus(),{hp:this.hero.maxHp,mana:this.maxMana,fury:0,shield:0,shieldRemaining:0});this.anchor={...this.profile.spawn};}
       return;
     }
     this.stepVitals(dt);
@@ -162,7 +177,7 @@ export class Combat {
     }
   }
   private stepVitals(dt:number){
-    this.hero.mana = Math.min(this.profile.mana, this.hero.mana + this.profile.mana * .008 * dt);
+    this.hero.mana = Math.min(this.maxMana, this.hero.mana + this.maxMana * .008 * dt);
     this.hero.hp = Math.min(this.hero.maxHp, this.hero.hp + this.hero.maxHp * 0.003 * dt);
     if (this.elapsed - this.lastCombat > 6) this.hero.fury = Math.max(0, this.hero.fury - 10 * dt);
     if (this.ultimateRemaining > 0) {
@@ -175,7 +190,7 @@ export class Combat {
     if (this.dash) {
       this.travel(this.dash.destination, RULES.dash.speed * dt,true);
       for (const enemy of this.enemies) if (enemy.alive && !this.dash.hit.has(enemy.id) && distance(this.hero, enemy) < 48) {
-        this.dash.hit.add(enemy.id); this.hurt(enemy, RULES.dash.damage, 'E');
+        this.dash.hit.add(enemy.id); this.hurt(enemy, RULES.dash.damage+(this.stats.attack-this.profile.stats.attack)*RULES.dash.attackRatio, 'E');
       }
       if (distance(this.hero, this.dash.destination) < 0.1) this.dash = null;
       return;
@@ -191,37 +206,44 @@ export class Combat {
     }
     if (distance(this.hero, this.profile.spawn) < 75) {
       this.hero.hp = Math.min(this.hero.maxHp, this.hero.hp + this.hero.maxHp * 0.15 * dt);
-      this.hero.mana = Math.min(this.profile.mana, this.hero.mana + this.profile.mana * .15 * dt);
+      this.hero.mana = Math.min(this.maxMana, this.hero.mana + this.maxMana * .15 * dt);
     }
     if (this.command.kind === 'move') {
-      this.travel(this.command.point, this.profile.stats.speed * dt);
+      this.travel(this.command.point, this.stats.speed * dt);
       if (distance(this.hero, this.command.point) < 0.1) this.command = { kind: 'idle' };
-      return;
-    }
-    if (this.command.kind === 'return') {
-      this.pending = null; this.travel(this.anchor, this.profile.stats.speed * dt);
-      if (distance(this.hero, this.anchor) < 0.1) this.command = { kind: 'idle' };
       return;
     }
     let target: Dummy | undefined;
     if (this.command.kind === 'attack') {
-      const id = this.command.targetId;
-      target = this.enemies.find(e => e.id === id && e.alive && !e.protected);
-      if (!target) { this.pending = null; this.command = { kind: 'return' }; return; }
-      if (!this.canSee(target)) {
+      const order = this.command;
+      target = this.enemies.find(e => e.id === order.targetId && e.generation===order.generation && e.alive && !e.protected);
+      if (!target) { this.pending = null; this.command = { kind: 'attackMove', point:{...order.point} }; }
+      else if (!this.canSee(target)) {
         this.pending = null;
-        if (this.lastSeen) this.travel(this.lastSeen, this.profile.stats.speed * dt);
-        if (!this.lastSeen || distance(this.hero, this.lastSeen) < 0.1) this.command = { kind: 'return' };
+        if (this.lastSeen) this.travel(this.lastSeen, this.stats.speed * dt);
+        if (!this.lastSeen || distance(this.hero, this.lastSeen) < 0.1) this.command = { kind:'attackMove',point:{...order.point} };
         return;
+      } else {
+        this.lastSeen = { x: target.x, y: target.y };
+        // Fight enemies encountered on the route; the explicit target wins when in range.
+        if(distance(this.hero,target)>this.stats.range+.001)target=this.routeTarget()??target;
       }
-      this.lastSeen = { x: target.x, y: target.y };
-    } else {
-      target = this.enemies.filter(e => e.alive && !e.protected && this.autoTargetAllowed(e) && this.canSee(e) && distance(e, this.anchor) <= this.profile.stats.anchorRadius).sort((a,b) => distance(this.hero,a)-distance(this.hero,b))[0];
     }
-    if (!target) { this.pending = null; return; }
+    if(this.command.kind==='attackMove')target=this.routeTarget();
+    else if(this.command.kind!=='attack') {
+      target = this.enemies.filter(e => e.alive && !e.protected && this.autoTargetAllowed(e) && this.canSee(e) && distance(e, this.anchor) <= this.stats.anchorRadius).sort((a,b) => distance(this.hero,a)-distance(this.hero,b))[0];
+    }
+    if (!target) {
+      this.pending = null;
+      if(this.command.kind==='attackMove'){
+        this.travel(this.command.point,this.stats.speed*dt);
+        if(distance(this.hero,this.command.point)<.1)this.command={kind:'idle'};
+      }
+      return;
+    }
     this.hero.facing = Math.atan2(target.y - this.hero.y, target.x - this.hero.x);
     if (this.pending) {
-      if (this.pending.targetId !== target.id || distance(this.hero, target) > this.profile.stats.range + 12) { this.pending = null; return; }
+      if (this.pending.targetId !== target.id || distance(this.hero, target) > this.stats.range + 12) { this.pending = null; return; }
       this.pending.remaining -= dt;
       if (this.pending.remaining <= 0) {
         const p = this.pending;
@@ -230,7 +252,7 @@ export class Combat {
           this.cooldown.w = RULES.w.cooldown;
           target.stunned = Math.max(target.stunned,RULES.w.stun + (p.empowered ? 0.4 : 0));
         }
-        this.basicHit(target, this.profile.stats.attack + (p.useW ? RULES.w.bonus * (p.empowered ? 1.5 : 1) : 0), p.useW ? 'W' : '기본 공격');
+        this.basicHit(target, this.stats.attack + (p.useW ? (RULES.w.bonus+(this.stats.attack-this.profile.stats.attack)*RULES.w.attackRatio) * (p.empowered ? 1.5 : 1) : 0), p.useW ? 'W' : '기본 공격');
         if (this.profile.kit === 'fury') this.hero.fury = Math.min(100, this.hero.fury + 10);
         this.completed.attack = true;
         this.pending = null;
@@ -239,12 +261,12 @@ export class Combat {
     }
     if(this.abilities.auto(target))return;
     const nearby = this.enemies.filter(e => e.alive && skillTarget(e) && this.canSee(e) && distance(this.hero,e) <= RULES.q.range);
-    const canW = skillTarget(target) && this.profile.kit === 'fury' && this.cooldown.w <= 0 && distance(this.hero,target) <= this.profile.stats.range + .001;
+    const canW = skillTarget(target) && this.profile.kit === 'fury' && this.cooldown.w <= 0 && distance(this.hero,target) <= this.stats.range + .001;
     if (this.profile.kit === 'fury' && this.cooldown.q <= 0 && nearby.length && (this.hero.hp / this.hero.maxHp <= 0.5 || !canW)) {
       const empowered = this.hero.fury >= 50;
       if (empowered) this.hero.fury -= 50;
       else this.hero.fury = Math.min(100, this.hero.fury + Math.min(15, nearby.length * 5));
-      for (const enemy of nearby) this.hurt(enemy, RULES.q.damage * (empowered ? 1.5 : 1), 'Q');
+      for (const enemy of nearby) this.hurt(enemy, (RULES.q.damage+(this.stats.attack-this.profile.stats.attack)*RULES.q.attackRatio) * (empowered ? 1.5 : 1), 'Q');
       const before = this.hero.hp;
       this.hero.hp = Math.min(this.hero.maxHp, this.hero.hp + Math.min(100, nearby.reduce((sum,e)=>sum+(e.kind==='minion'?8:RULES.q.heal),0)) * (empowered ? 2 : 1));
       if (this.hero.hp > before) this.events.push({ kind: 'heal', point: { ...this.hero }, amount: this.hero.hp-before });
@@ -252,12 +274,16 @@ export class Combat {
       this.cooldown.q = RULES.q.cooldown;
       return;
     }
-    if (distance(this.hero, target) > this.profile.stats.range + .001) {
-      this.travel(target, Math.min(this.profile.stats.speed * dt, distance(this.hero,target)-this.profile.stats.range));
+    if (distance(this.hero, target) > this.stats.range + .001) {
+      this.travel(target, Math.min(this.stats.speed * dt, distance(this.hero,target)-this.stats.range));
     } else if (this.cooldown.attack <= 0) {
-      this.pending = { targetId: target.id, remaining: this.profile.stats.windup, empowered: this.hero.fury >= 50, useW: canW };
-      this.cooldown.attack = this.profile.stats.attackInterval / (this.abilities.haste>0?1+SKILLS.frost.q.haste:1);
+      this.pending = { targetId: target.id, remaining: this.stats.windup, empowered: this.hero.fury >= 50, useW: canW };
+      this.cooldown.attack = this.stats.attackInterval / (this.abilities.haste>0?1+SKILLS.frost.q.haste:1);
     }
+  }
+  private routeTarget(){
+    return this.enemies.filter(e=>e.alive&&!e.protected&&this.autoTargetAllowed(e)&&this.canSee(e)&&distance(this.hero,e)<=this.stats.range+.001)
+      .sort((a,b)=>Number(a.kind==='building')-Number(b.kind==='building')||distance(this.hero,a)-distance(this.hero,b))[0];
   }
   private basicHit(target: Dummy, raw: number, source: string) {
     if (!this.profile.projectileSpeed) { this.hurt(target, raw, source, true, 'physical', 'basic');this.abilities.onBasicHit(target); return; }

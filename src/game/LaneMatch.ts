@@ -7,6 +7,7 @@ import { freshStatus, mitigate, towards } from './effects.ts';
 import { damageTarget } from './targets.ts';
 import type { Target } from './targets.ts';
 import type { Pet } from './Abilities.ts';
+import { PROGRESSION, TeamEconomy } from './progression.ts';
 
 // Compact first-match map. These are playtest values, not final ranked balance.
 export const LANE = {
@@ -32,6 +33,7 @@ export class LaneMatch extends Squad {
   wave=0;
   nextWave:number=LANE.firstWave;
   result:MatchResult|null=null;
+  economy={blue:new TeamEconomy(),red:new TeamEconomy()};
   towerShots=new Map<string,TowerShot>();
   private towerFocus=new Map<string,{key:unknown;hits:number}>();
   private serial=0;
@@ -44,6 +46,7 @@ export class LaneMatch extends Squad {
     this.enemies.push(...this.units.filter(u=>u.team==='red'));
     this.members=CHAMPIONS.map((profile,i)=>{
       const c=new Combat({...profile,spawn:{...LANE.spawns[i]}},this.enemies);
+      c.progression.enabled=true;
       c.autoTargetAllowed=target=>target.kind!=='building'||this.supported(target,'blue');
       return c;
     });
@@ -51,9 +54,19 @@ export class LaneMatch extends Squad {
   }
   private createUnit(team:Team,role:LaneUnit['role'],x:number,y:number):LaneUnit {
     const stats=LANE[role];
-    return{id:`${team}-${role}-${++this.serial}`,team,role,kind:role==='tower'||role==='nexus'?'building':'minion',x,y,
+    const unit:LaneUnit={id:`${team}-${role}-${++this.serial}`,team,role,kind:role==='tower'||role==='nexus'?'building':'minion',x,y,
       hp:stats.hp,maxHp:stats.hp,armor:stats.armor,magicResist:0,alive:true,visible:true,
       revealed:0,alert:0,aggro:null,attackCooldown:0,respawn:Infinity,generation:0,...freshStatus()};
+    unit.onDeath=()=>this.reward(unit);
+    return unit;
+  }
+  private reward(unit:LaneUnit){
+    if(this.result)return;
+    const team=unit.team==='blue'?'red':'blue',reward=PROGRESSION.rewards[unit.role];
+    const nearby=team==='blue'?this.members.filter(c=>c.alive&&distance(c.hero,unit)<=PROGRESSION.rewardRange):[];
+    if(unit.kind==='building'||nearby.length)this.economy[team].add(reward.gold);
+    const eligible=nearby.filter(c=>!c.progression.capped);
+    for(const c of eligible)c.gainExperience(reward.xp/eligible.length);
   }
   supported(target:Point,attacker:Team){return this.units.some(u=>u.alive&&u.team===attacker&&u.kind==='minion'&&distance(u,target)<=LANE.supportRange);}
   structure(team:Team,role:'tower'|'nexus'){return this.units.find(u=>u.team===team&&u.role===role)!;}
@@ -90,6 +103,7 @@ export class LaneMatch extends Squad {
   }
   step(dt:number){
     if(this.result||dt<=0)return;
+    for(const economy of Object.values(this.economy))economy.advance(this.elapsed,this.elapsed+dt);
     this.elapsed+=dt;
     if(this.elapsed+1e-8>=this.nextWave){this.spawnWave();this.nextWave+=LANE.waveInterval;}
     Combat.stepEnemies(this.units,dt);
