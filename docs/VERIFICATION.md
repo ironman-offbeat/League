@@ -62,3 +62,7 @@
 - These lifecycle tests use a rendering backend double. Production art and its specific atlas/frame layout have not yet been supplied or visually accepted.
 - Local Chromium desktop/mobile before the rendering refactor: 13 passed, 1 desktop touch-only case skipped. The final combined commit is rechecked in GitHub Actions across desktop Chromium, mobile Chromium and mobile WebKit.
 - Graphics may react to combat events but cannot create gameplay damage or control attack/CC/respawn timing.
+
+### WebKit first-wave timing
+
+The initial PR run passed 19 browser cases but the new WebKit wave check exceeded its 15-second wall-time budget. Its captured DOM showed the match running at 00:08 with two simulation seconds until the first wave; resume was working. The check now separately verifies unpaused state and clock advancement, then allows 35 wall seconds to reach the unchanged 10-second simulation threshold. No game timing or frame cap was relaxed. Final status is recorded by Verify game for the amended commit.

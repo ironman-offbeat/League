@@ -109,6 +109,7 @@ test('all three new kits accept touch aim and ultimate input',async({page,isMobi
 });
 
 test('lane mode starts waves, rallies four heroes, pauses clocks and resets cleanly',async({page,isMobile},info)=>{
+ test.setTimeout(60000);
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto('/');await expect(page.locator('body')).toHaveAttribute('data-ready','true');
  const press=async(id:string)=>{if(isMobile)await page.locator(id).tap();else await page.locator(id).click();};
@@ -120,7 +121,12 @@ test('lane mode starts waves, rallies four heroes, pauses clocks and resets clea
  await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.members.filter((m:any)=>m.command==='move').length)).toBe(4);
  await press('#pause');const frozen=await page.evaluate(()=>(window as any).leagueDebug.match.elapsed);await page.waitForTimeout(300);
  expect(await page.evaluate(()=>(window as any).leagueDebug.match.elapsed)).toBe(frozen);
- await press('#resume');await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.match.wave),{timeout:15000}).toBe(1);
+ await press('#resume');
+ await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.paused)).toBe(false);
+ await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.match.elapsed)).toBeGreaterThan(frozen);
+ // CI WebKit software rendering advanced only 8 simulation seconds in 15 wall seconds.
+ // Keep the game's bounded fixed-step clock; allow the actual 10s wave threshold to be reached.
+ await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.match.wave),{timeout:35000}).toBe(1);
  await press('#front-camera');
  expect(await page.evaluate(()=>(window as any).leagueDebug.match.units.filter((u:any)=>u.kind==='minion').length)).toBeGreaterThan(0);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
