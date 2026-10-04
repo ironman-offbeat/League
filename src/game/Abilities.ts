@@ -1,3 +1,4 @@
+import { skillTarget } from './targets.ts';
 import type { Combat, Dummy } from './combat.ts';
 import { RULES, distance } from './config.ts';
 import type { Point } from './config.ts';
@@ -23,7 +24,7 @@ export class Abilities {
     if(slot==='ultimate') {
       if(kit==='fury')return{key:'R',name:'거대화',aim:'self',cost:0,cooldown:RULES.ultimate.cooldown,range:RULES.ultimate.range,hint:'10초 체력 증가'};
       if(kit==='flame')return{key:'R',name:'곰 소환',aim:'point',cost:flame.ultimate.cost,cooldown:flame.ultimate.cooldown,range:flame.ultimate.range,hint:'지점 지정 · 12초 소환'};
-      if(kit==='frost')return{key:'R',name:'얼음 화살',aim:'direction',cost:frost.ultimate.cost,cooldown:frost.ultimate.cooldown,range:frost.ultimate.range,hint:'첫 대상 기절'};
+      if(kit==='frost')return{key:'R',name:'얼음 화살',aim:'direction',cost:frost.ultimate.cost,cooldown:frost.ultimate.cooldown,range:frost.ultimate.range,hint:'첫 챔피언 기절'};
       return{key:'R',name:'슬픈 미라',aim:'self',cost:curse.ultimate.cost,cooldown:curse.ultimate.cooldown,range:curse.ultimate.range,hint:'주변 속박'};
     }
     if(kit==='fury')return{key:'E',name:'돌진',aim:'direction',cost:0,cooldown:RULES.dash.cooldown,range:RULES.dash.range,hint:'드래그 / 선택 후 지점'};
@@ -39,7 +40,7 @@ export class Abilities {
     if(kit==='fury')return slot==='manual'?c.castDash(point!):c.castUltimate();
     c.hero.mana-=p.cost;c.cooldown[slot==='manual'?'dash':'ultimate']=p.cooldown;c.cancelRecall();c.pending=null;
     if(slot==='manual')c.completed.dash=true;
-    const targets=c.enemies.filter(e=>e.alive&&c.canSee(e));
+    const targets=c.enemies.filter(e=>e.alive&&skillTarget(e)&&c.canSee(e));
     if(kit==='flame') {
       const cfg=SKILLS.flame;
       const center=slot==='ultimate'?towards(c.hero,point!,cfg.ultimate.range):c.hero;
@@ -60,6 +61,7 @@ export class Abilities {
   }
   private launch(kind:'hook'|'arrow',point:Point,range:number){const c=this.owner,d=distance(c.hero,point);this.missiles.push({point:{x:c.hero.x,y:c.hero.y},direction:{x:(point.x-c.hero.x)/d,y:(point.y-c.hero.y)/d},remaining:range,kind});}
   onBasicHit(e:Dummy){
+    if(!skillTarget(e))return;
     if(this.owner.profile.kit==='frost')applySlow(e,SKILLS.frost.passive.slow,SKILLS.frost.passive.duration);
     if(this.owner.profile.kit==='curse')e.marked=Math.max(e.marked,SKILLS.curse.passive.duration);
   }
@@ -71,21 +73,22 @@ export class Abilities {
   }
   auto(target:Dummy){
     const c=this.owner,kit=c.profile.kit;
+    if(!skillTarget(target)&&kit!=='frost')return false;
     if(kit==='flame'){
       const q=SKILLS.flame.q;
       if(c.cooldown.q<=0&&distance(c.hero,target)<=q.range&&this.pay(q.cost)){c.cooldown.q=q.cooldown;c.hurt(target,q.damage,'Q',true,'magic');this.stacks=Math.min(SKILLS.flame.passive.stacks,this.stacks+1);return true;}
     } else if(kit==='frost'){
       const s=SKILLS.frost;
       if(c.cooldown.q<=0&&distance(c.hero,target)<=c.profile.stats.range+.001&&this.pay(s.q.cost)){c.cooldown.q=s.q.cooldown;this.haste=s.q.duration;return true;}
-      if(c.cooldown.w<=0&&distance(c.hero,target)<=s.w.range&&this.pay(s.w.cost)){
+      if(skillTarget(target)&&c.cooldown.w<=0&&distance(c.hero,target)<=s.w.range&&this.pay(s.w.cost)){
         c.cooldown.w=s.w.cooldown;
-        for(const e of c.enemies.filter(e=>e.alive&&c.canSee(e)&&inCone(c.hero,target,e,s.w.range,s.w.angle))){c.hurt(e,s.w.damage+c.profile.stats.attack*s.w.ad,'W');applySlow(e,s.w.slow,s.w.duration);}
+        for(const e of c.enemies.filter(e=>e.alive&&skillTarget(e)&&c.canSee(e)&&inCone(c.hero,target,e,s.w.range,s.w.angle))){c.hurt(e,s.w.damage+c.profile.stats.attack*s.w.ad,'W');applySlow(e,s.w.slow,s.w.duration);}
         c.events.push({kind:'slash',point:{...c.hero}});return true;
       }
     } else if(kit==='curse'){
       const s=SKILLS.curse.burst;
       if(c.cooldown.e<=0&&distance(c.hero,target)<=s.range&&this.pay(s.cost)){
-        c.cooldown.e=s.cooldown;for(const e of c.enemies.filter(e=>e.alive&&c.canSee(e)&&distance(c.hero,e)<=s.range))c.hurt(e,s.damage,'E',true,'magic');c.events.push({kind:'slash',point:{...c.hero}});return true;
+        c.cooldown.e=s.cooldown;for(const e of c.enemies.filter(e=>e.alive&&skillTarget(e)&&c.canSee(e)&&distance(c.hero,e)<=s.range))c.hurt(e,s.damage,'E',true,'magic');c.events.push({kind:'slash',point:{...c.hero}});return true;
       }
     }
     return false;
@@ -100,7 +103,7 @@ export class Abilities {
     if(this.scout){this.scout.remaining-=dt;if(this.scout.remaining<=0)this.scout=null;else this.reveal();}
     if(this.pet)this.stepPet(dt);
     if(c.profile.kit==='curse'){
-      const a=SKILLS.curse.aura,targets=c.enemies.filter(e=>e.alive&&c.canSee(e)&&distance(c.hero,e)<=a.range);
+      const a=SKILLS.curse.aura,targets=c.enemies.filter(e=>e.alive&&skillTarget(e)&&c.canSee(e)&&distance(c.hero,e)<=a.range);
       const canAura=c.canAct&&!this.pull&&!c.dash&&['idle','attack'].includes(c.command.kind)&&targets.length>0&&c.hero.mana-a.costPerSecond*dt>=this.reserve;
       if(this.aura&&!canAura){this.aura=false;this.auraLock=a.restart;}
       if(canAura&&this.auraLock<=0){this.aura=true;c.hero.mana-=a.costPerSecond*dt;for(const e of targets)c.hurt(e,(a.damage+e.maxHp*a.hpRatio)*dt,'W',false,'magic');}
@@ -111,7 +114,7 @@ export class Abilities {
     this.missiles=this.missiles.filter(m=>{
       const cfg=m.kind==='hook'?SKILLS.curse.hook:SKILLS.frost.ultimate;
       const length=Math.min(m.remaining,cfg.speed*dt),end={x:m.point.x+m.direction.x*length,y:m.point.y+m.direction.y*length};
-      const hit=c.enemies.filter(e=>e.alive).map(e=>({e,...alongSegment(m.point,end,e)})).filter(h=>h.distance<=cfg.radius+18).sort((a,b)=>a.t-b.t)[0]?.e;
+      const hit=c.enemies.filter(e=>e.alive&&skillTarget(e)&&(m.kind==='hook'||e.kind!=='minion')).map(e=>({e,...alongSegment(m.point,end,e)})).filter(h=>h.distance<=cfg.radius+18).sort((a,b)=>a.t-b.t)[0]?.e;
       m.remaining-=length;m.point=end;
       if(hit){c.hurt(hit,cfg.damage,m.kind==='hook'?'Q':'R',true,'magic');applyCC(hit,'stunned',cfg.stun);
         if(m.kind==='hook'&&c.canAct&&c.hero.rooted<=0){this.pull=towards(hit,c.hero,c.profile.stats.range);c.anchor={...this.pull};c.command={kind:'attack',targetId:hit.id};c.lastSeen={x:hit.x,y:hit.y};c.pending=null;}
@@ -124,7 +127,7 @@ export class Abilities {
     const c=this.owner,p=this.pet!,cfg=SKILLS.flame.pet;p.remaining-=dt;p.cooldown=Math.max(0,p.cooldown-dt);
     if(p.remaining<=0||p.hp<=0){this.pet=null;return;}
     const direct=c.command.kind==='attack'?c.command.targetId:null;
-    const targets=c.enemies.filter(e=>e.alive&&c.canSee(e)&&distance(c.hero,e)<=cfg.leash);
+    const targets=c.enemies.filter(e=>e.alive&&skillTarget(e)&&c.canSee(e)&&distance(c.hero,e)<=cfg.leash);
     const target=targets.find(e=>e.id===direct)??targets.sort((a,b)=>distance(p,a)-distance(p,b))[0];
     const goal=distance(p,c.hero)>cfg.leash?c.hero:target??c.hero;
     const reach=goal===c.hero?45:cfg.range,d=distance(p,goal);

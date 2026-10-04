@@ -7,3 +7,12 @@
 @media(max-height:500px){#roster{right:10px;top:8px;grid-template-columns:repeat(2,100px);gap:4px}#roster button{padding:4px 7px;min-height:42px}}
 
 #retaliation[aria-pressed="true"]{border-color:#b57a61;color:#e9b193}.skill em{font-size:16px}
+
+[hidden]{display:none!important}
+#mode{border-color:#b6a16a;color:#ead399}
+#match-hud{position:absolute;top:18px;left:22px;display:grid;gap:6px;pointer-events:none;background:#152820df;padding:12px 16px;border:1px solid #73836988;border-radius:6px;max-width:calc(100% - 260px)}
+#match-clock{font:22px Georgia,serif;color:#e8d599}#match-hud span{font-size:12px}#match-hud small{font-size:10px;color:#adc6b2}#match-hud button{pointer-events:auto;background:#2e4941;border:1px solid #718c78;border-radius:4px;padding:8px 12px;font-size:11px;margin:3px 6px 0 0}
+@media(max-width:950px){.session{display:none}.topbar{gap:8px}#match-hud{top:8px;left:10px;padding:7px 10px;gap:4px}#match-clock{font-size:16px}#match-hud span{font-size:10px}#match-hud small{font-size:9px}#match-hud button{padding:6px 9px;font-size:10px}.top-actions button{padding:7px}}
+
+.skill b img{width:30px;height:30px;object-fit:contain}#roster b img{width:26px;height:26px;object-fit:contain}
+.portrait img{width:45px;height:45px;object-fit:contain}

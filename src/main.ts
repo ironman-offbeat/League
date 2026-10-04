@@ -1,3 +1,4 @@
+import { ASSETS, skillVisual } from './render/assets.ts';
 import Phaser from 'phaser';
 import './style.css';
 import type { SkillSlot } from './game/skillConfig.ts';
@@ -9,6 +10,7 @@ const scene=new ArenaScene();
 CHAMPIONS.forEach((p,i)=>{
   const b=document.createElement('button');b.id=`champion-${p.id}`;b.setAttribute('aria-label',`${p.name} 선택`);
   b.innerHTML=`<b>${p.symbol}</b><span>${p.name}<small></small></span>`;
+  const icon=ASSETS.icons[`champion.${p.id}`];if(icon){const image=new Image();image.src=icon;image.alt='';image.onload=()=>b.querySelector('b')!.replaceChildren(image);}
   b.onclick=()=>{skillDrag=null;scene.selectChampion(i);};el('roster').append(b);
 });
 let manualPause=false,helpOpen=false,backgroundPause=false;
@@ -18,11 +20,24 @@ const portraitQuery=window.matchMedia('(orientation: portrait) and (max-width: 9
 function syncPause(){skillDrag=null;scene.setPaused(manualPause||helpOpen||backgroundPause||portraitQuery.matches);el('pause-overlay').hidden=!(manualPause||backgroundPause)||helpOpen;el('pause').textContent=manualPause?'계속하기':'일시정지';}
 scene.notify=text=>{if(lastToast!==text){el('toast').textContent=text;lastToast=text;}};
 scene.onFrame=s=>{
-  const c=s.combat;
+  const c=s.combat,match=s.match;
+  el('mode').textContent=match?'연습장으로':'한 라인 경기';
+  el('session-name').textContent=match?'한 라인 공성':'조작 연습장';
+  el('retaliation').hidden=!!match;el('training-objectives').hidden=!!match;el('match-hud').hidden=!match;
+  el('result-overlay').hidden=!match?.result;
+  if(match){
+    const time=`${Math.floor(match.elapsed/60).toString().padStart(2,'0')}:${Math.floor(match.elapsed%60).toString().padStart(2,'0')}`;
+    el('match-clock').textContent=time;
+    const tower=match.structure('red','tower'),blue=match.structure('blue','nexus'),red=match.structure('red','nexus');
+    el('match-objective').textContent=tower.alive?`적 타워 ${Math.ceil(tower.hp)} · 미니언과 함께 공성`:`적 넥서스 ${Math.ceil(red.hp)} · 파괴하면 승리`;
+    el('match-wave').textContent=`아군 넥서스 ${Math.ceil(blue.hp)} · ${match.wave}차 출발 · 증원 ${Math.max(0,Math.ceil(match.nextWave-match.elapsed))}초`;
+    if(match.result){el('result-title').textContent={victory:'승리!',defeat:'패배',draw:'무승부'}[match.result];el('result-summary').textContent=`${time} · ${match.wave}차 미니언 · 총 피해 ${Math.round(match.members.reduce((sum,m)=>sum+m.damage,0)).toLocaleString('ko-KR')} · ${match.result==='victory'?'적 넥서스를 파괴했습니다.':match.result==='defeat'?'아군 넥서스가 파괴되었습니다.':'두 넥서스가 동시에 파괴되었습니다.'}`;}
+  }
   const fury=c.profile.kit==='fury';
   el('champion-name').textContent=c.profile.name;
   el('champion-status').textContent=c.profile.kit==='flame'?`불꽃 ${c.abilities.stacks}/3`:c.abilities.haste>0?'공속 강화':c.abilities.aura?'눈물 활성':'Lv. 1';
-  el('portrait').querySelector('span')!.textContent=c.profile.symbol;
+  const portrait=el('portrait').querySelector('span')!;
+  if(portrait.dataset.visual!==c.profile.id){portrait.dataset.visual=c.profile.id;portrait.textContent=c.profile.symbol;const icon=ASSETS.icons[`champion.${c.profile.id}`];if(icon){const image=new Image();image.src=icon;image.alt='';image.onload=()=>{if(portrait.dataset.visual===c.profile.id)portrait.replaceChildren(image);};}}
   el('portrait').setAttribute('aria-label',`${c.profile.name}에게 카메라 이동`);
   el('kit-note').textContent={fury:'Q · W 자동',flame:`불꽃 ${c.abilities.stacks}/3 · Q/E 자동`,frost:'Q · W 자동',curse:'W · E 자동'}[c.profile.kit];
   el('retaliation').textContent=s.squad.retaliation?'반격 켜짐':'반격 꺼짐';
@@ -40,12 +55,15 @@ scene.onFrame=s=>{
   el('damage').textContent=Math.round(c.damage).toLocaleString('ko-KR');
   for(const [id,slot,cdId] of [['dash','manual','dash-cd'],['ultimate','ultimate','ult-cd']] as const){
     const p=c.abilities.presentation(slot),button=el<HTMLButtonElement>(id),cd=c.cooldown[slot==='manual'?'dash':'ultimate'];
-    button.querySelector('b')!.textContent=p.key;button.querySelector('span')!.textContent=p.name;button.querySelector('small')!.textContent=p.hint;
+    const iconId=skillVisual(c.profile.kit,slot),icon=ASSETS.icons[iconId];
+    const key=button.querySelector('b')!;
+    if(key.dataset.visual!==iconId){key.dataset.visual=iconId;key.textContent=p.key;if(icon){const image=new Image();image.src=icon;image.alt='';image.onload=()=>{if(key.dataset.visual===iconId)key.replaceChildren(image);};}}
+    button.querySelector('span')!.textContent=p.name;button.querySelector('small')!.textContent=p.hint;
     el(cdId).textContent=!c.alive?'부활 중':cd>0?Math.ceil(cd).toString():c.hero.mana<p.cost?'마나 부족':'';
-    button.disabled=!c.abilities.canCast(slot);button.classList.toggle('armed',s.aimSlot===slot);
+    button.disabled=s.blocked||!c.abilities.canCast(slot);button.classList.toggle('armed',s.aimSlot===slot);
     button.setAttribute('aria-label',`${p.name} ${p.key}`);
   }
-  el<HTMLButtonElement>('recall').disabled=!c.canAct;
+  el<HTMLButtonElement>('recall').disabled=s.blocked||!c.canAct;
   const names={idle:'대기 · 자동 전투',move:'이동 · 공격보다 이동 우선',attack:'직접 공격 · 전진 한계 무시',return:'기준 지점으로 복귀',recall:'귀환 중'};
   el('command-label').textContent=!c.alive?`부활까지 ${c.respawnRemaining.toFixed(1)}초`:c.hero.shield>0?`보호막 ${Math.ceil(c.hero.shield)} · ${names[c.command.kind]}`:c.command.kind==='recall'?`귀환 중 · ${c.command.remaining.toFixed(1)}초`:names[c.command.kind];
   for(const key of ['move','attack','dash'] as const) el(`goal-${key}`).classList.toggle('done',c.completed[key]);
@@ -56,19 +74,25 @@ el('resume').onclick=()=>{manualPause=false;backgroundPause=false;syncPause();};
 el('help').onclick=()=>{helpOpen=true;el('help-overlay').hidden=false;syncPause();};
 el('close-help').onclick=()=>{helpOpen=false;el('help-overlay').hidden=true;syncPause();};
 el('reset').onclick=()=>{scene.restartTraining();manualPause=false;backgroundPause=false;syncPause();};
+function switchMode(lane:boolean){skillDrag=null;scene.startMode(lane);manualPause=false;backgroundPause=false;syncPause();}
+el('mode').onclick=()=>switchMode(!scene.match);
+el('rematch').onclick=()=>switchMode(true);
+el('back-training').onclick=()=>switchMode(false);
+el('rally').onclick=()=>scene.rally();
+el('front-camera').onclick=()=>{if(scene.match){const front=Math.max(600,...scene.match.units.filter(u=>u.team==='blue'&&u.kind==='minion'&&u.alive).map(u=>u.x));scene.cameras.main.centerOn(front,500);}};
 el('center').onclick=el('portrait').onclick=()=>scene.centerHero();
-el('retaliation').onclick=()=>{if(!scene.paused)scene.squad.setRetaliation(!scene.squad.retaliation);};
-el('recall').onclick=()=>{if(!scene.paused&&scene.combat.recall())scene.notify('귀환 중 · 이동이나 스킬을 사용하면 취소됩니다.');};
+el('retaliation').onclick=()=>{if(!scene.blocked)scene.squad.setRetaliation(!scene.squad.retaliation);};
+el('recall').onclick=()=>{if(!scene.blocked&&scene.combat.recall())scene.notify('귀환 중 · 이동이나 스킬을 사용하면 취소됩니다.');};
 let skillDrag:{x:number;y:number;id:number;actor:string;slot:SkillSlot}|null=null;
 for(const [id,slot] of [['dash','manual'],['ultimate','ultimate']] as const){
   const button=el(id);
   button.onpointerdown=e=>{
-    if(scene.paused||!scene.combat.abilities.canCast(slot)||skillDrag)return;
+    if(scene.blocked||!scene.combat.abilities.canCast(slot)||skillDrag)return;
     skillDrag={x:e.clientX,y:e.clientY,id:e.pointerId,actor:scene.combat.profile.id,slot};button.setPointerCapture(e.pointerId);
   };
   button.onpointerup=e=>{
     const start=skillDrag;if(!start||start.id!==e.pointerId)return;skillDrag=null;
-    if(scene.paused||start.actor!==scene.combat.profile.id||!scene.combat.abilities.canCast(slot))return;
+    if(scene.blocked||start.actor!==scene.combat.profile.id||!scene.combat.abilities.canCast(slot))return;
     const p=scene.combat.abilities.presentation(slot);
     if(p.aim==='self'){scene.cancelGesture();if(scene.combat.castSkill(slot))scene.notify(`${p.name} 사용`);}
     else if(Math.hypot(e.clientX-start.x,e.clientY-start.y)>12)scene.dashToScreen(e.clientX,e.clientY,slot);
@@ -84,4 +108,4 @@ document.addEventListener('contextmenu',e=>e.preventDefault());
 window.addEventListener('keydown',e=>{if(e.repeat)return;if(e.code==='Space'){e.preventDefault();manualPause=!manualPause;syncPause();}if(e.code==='Escape'){skillDrag=null;scene.cancelGesture();}});
 
 // Read-only diagnostics for repeatable browser verification, no mutation shortcuts.
-Object.defineProperty(window,'leagueDebug',{get:()=>({selected:scene.combat.profile.id,retaliation:scene.squad.retaliation,skillCooldowns:{...scene.combat.cooldown},respawn:scene.combat.respawnRemaining,stacks:scene.combat.abilities.stacks,pet:scene.combat.abilities.pet?{...scene.combat.abilities.pet}:null,members:scene.squad.members.map(c=>({id:c.profile.id,hero:{...c.hero},command:c.command.kind,damage:c.damage,elapsed:c.elapsed})),ready:document.body.dataset.ready==='true',paused:scene.paused,hero:{...scene.combat.hero},command:scene.combat.command.kind,damage:scene.combat.damage,dashCooldown:scene.combat.cooldown.dash,elapsed:scene.combat.elapsed,enemies:scene.combat.enemies.map(e=>({...e})),camera:{x:scene.cameras.main?.scrollX??0,y:scene.cameras.main?.scrollY??0},completed:{...scene.combat.completed}})});
+Object.defineProperty(window,'leagueDebug',{get:()=>({visuals:scene.visualCounts,mode:scene.match?'lane':'training',match:scene.match?{elapsed:scene.match.elapsed,wave:scene.match.wave,result:scene.match.result,units:scene.match.units.map(u=>({...u}))}:null,selected:scene.combat.profile.id,retaliation:scene.squad.retaliation,skillCooldowns:{...scene.combat.cooldown},respawn:scene.combat.respawnRemaining,stacks:scene.combat.abilities.stacks,pet:scene.combat.abilities.pet?{...scene.combat.abilities.pet}:null,members:scene.squad.members.map(c=>({id:c.profile.id,hero:{...c.hero},command:c.command.kind,damage:c.damage,elapsed:c.elapsed})),ready:document.body.dataset.ready==='true',paused:scene.paused,hero:{...scene.combat.hero},command:scene.combat.command.kind,damage:scene.combat.damage,dashCooldown:scene.combat.cooldown.dash,elapsed:scene.combat.elapsed,enemies:scene.combat.enemies.map(e=>({...e})),camera:{x:scene.cameras.main?.scrollX??0,y:scene.cameras.main?.scrollY??0},completed:{...scene.combat.completed}})});
