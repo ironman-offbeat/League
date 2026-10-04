@@ -153,10 +153,15 @@ test('target defeat continues toward the attacked location instead of returning 
   const p=await page.evaluate(()=>{const d=(window as any).leagueDebug,r=document.querySelector('canvas')!.getBoundingClientRect();return{sx:r.left+d.hero.x-d.camera.x,sy:r.top+d.hero.y-d.camera.y,x:r.left+720-d.camera.x,y:r.top+470-d.camera.y};});
   await page.mouse.move(p.sx,p.sy);await page.mouse.down();await page.mouse.move(p.x,p.y,{steps:8});await page.mouse.up();
  };
- await attack();await press('#champion-annie');await attack();await press('#champion-renekton');
+ await attack();
+ // Mobile pointer coordinates can round by half a pixel. Compare against the
+ // actual accepted order, then ensure combat never changes that destination.
+ const destination=await page.evaluate(()=>(window as any).leagueDebug.anchor);
+ expect(Math.hypot(destination.x-720,destination.y-470)).toBeLessThan(2);
+ await press('#champion-annie');await attack();await press('#champion-renekton');
  await expect.poll(()=>page.evaluate(()=>{const e=(window as any).leagueDebug.enemies[0];return !e.alive||e.generation>0;}),{timeout:60000}).toBe(true);
- await expect.poll(()=>page.evaluate(()=>{const h=(window as any).leagueDebug.hero;return Math.hypot(h.x-720,h.y-470);}),{timeout:15000}).toBeLessThan(2);
+ await expect.poll(()=>page.evaluate(p=>{const h=(window as any).leagueDebug.hero;return Math.hypot(h.x-p.x,h.y-p.y);},destination),{timeout:15000}).toBeLessThan(1);
  const d=await page.evaluate(()=>(window as any).leagueDebug);
- expect(d.anchor.x).toBeCloseTo(720,0);expect(d.anchor.y).toBeCloseTo(470,0);
+ expect(d.anchor).toEqual(destination);
  expect(d.hero.x).toBeGreaterThan(700);expect(errors).toEqual([]);
 });
