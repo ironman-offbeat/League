@@ -18,7 +18,9 @@ CHAMPIONS.forEach((p,i)=>{
 });
 let manualPause=false,helpOpen=false,backgroundPause=false;
 let lastToast='';
-const game=new Phaser.Game({type:Phaser.AUTO,parent:'game',backgroundColor:'#263d32',scene:[scene],scale:{mode:Phaser.Scale.RESIZE,width:'100%',height:'100%'},render:{antialias:true,roundPixels:false},input:{activePointers:2},audio:{noAudio:true}});
+// Our fixed-step accumulator already bounds foreground stalls and clears on pause.
+// Phaser smoothing substitutes old 16ms deltas during low-FPS startup, slowing gameplay.
+const game=new Phaser.Game({fps:{smoothStep:false},type:Phaser.AUTO,parent:'game',backgroundColor:'#263d32',scene:[scene],scale:{mode:Phaser.Scale.RESIZE,width:'100%',height:'100%'},render:{antialias:true,roundPixels:false},input:{activePointers:2},audio:{noAudio:true}});
 const portraitQuery=window.matchMedia('(orientation: portrait) and (max-width: 900px)');
 function syncPause(){skillDrag=null;scene.setPaused(manualPause||helpOpen||backgroundPause||portraitQuery.matches);el('pause-overlay').hidden=!(manualPause||backgroundPause)||helpOpen;el('pause').textContent=manualPause?'계속하기':'일시정지';}
 scene.notify=text=>{if(lastToast!==text){el('toast').textContent=text;lastToast=text;}};
