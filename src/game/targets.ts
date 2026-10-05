@@ -3,6 +3,7 @@ import type { DamageType, Status } from './effects.ts';
 import type { Point } from './config.ts';
 
 export type Target = Point & Status & {
+  onDeath?:(target:Target)=>void;
   kind?: 'champion' | 'minion' | 'building';
   protected?: boolean;
   damageScale?: number;
@@ -18,6 +19,6 @@ export function damageTarget(target:Target,raw:number,type:DamageType,kind:HitKi
   if(!target.alive || target.protected || (target.kind==='building' && kind!=='basic'))return 0;
   const amount=Math.min(target.hp,mitigate(raw*(target.damageScale??1),type==='physical'?target.armor:target.magicResist));
   target.hp-=amount;
-  if(target.hp<=0){target.hp=0;target.alive=false;target.respawn=target.kind==='minion'||target.kind==='building'?Infinity:3;}
+  if(target.hp<=0){target.hp=0;target.alive=false;target.respawn=target.kind==='minion'||target.kind==='building'?Infinity:3;target.onDeath?.(target);}
   return amount;
 }

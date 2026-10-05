@@ -115,6 +115,8 @@ test('lane mode starts waves, rallies four heroes, pauses clocks and resets clea
  const press=async(id:string)=>{if(isMobile)await page.locator(id).tap();else await page.locator(id).click();};
  await press('#dash');await press('#mode');
  await expect(page.locator('#match-hud')).toBeVisible();await expect(page.locator('#retaliation')).toBeHidden();
+ await expect(page.locator('#xp-track')).toBeVisible();await expect(page.locator('#xp-text')).toHaveText('XP 0 / 100');
+ await expect(page.locator('#team-gold')).toHaveText('팀 골드 200');await expect(page.locator('#ultimate')).toBeDisabled();await expect(page.locator('#ult-cd')).toHaveText('Lv. 4 해금');
  await expect(page.locator('#dash')).not.toHaveClass(/armed/);
  expect(await page.evaluate(()=>(window as any).leagueDebug.mode)).toBe('lane');
  await press('#rally');
@@ -127,13 +129,43 @@ test('lane mode starts waves, rallies four heroes, pauses clocks and resets clea
  // CI WebKit software rendering advanced only 8 simulation seconds in 15 wall seconds.
  // Keep the game's bounded fixed-step clock; allow the actual 10s wave threshold to be reached.
  await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.match.wave),{timeout:35000}).toBe(1);
+ await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.match.gold)).toBeGreaterThan(200);
  await press('#front-camera');
  expect(await page.evaluate(()=>(window as any).leagueDebug.match.units.filter((u:any)=>u.kind==='minion').length)).toBeGreaterThan(0);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
  await page.screenshot({path:`test-results/lane-${info.project.name}.png`});
  await press('#reset');await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.match.wave)).toBe(0);
+ await expect(page.locator('#team-gold')).toHaveText('팀 골드 200');await expect(page.locator('#xp-text')).toHaveText('XP 0 / 100');
  await press('#mode');await expect(page.locator('#retaliation')).toBeVisible();await expect(page.locator('#match-hud')).toBeHidden();
  expect(await page.evaluate(()=>(window as any).leagueDebug.enemies.length)).toBe(3);
  expect(await page.evaluate(()=>(window as any).leagueDebug.hero.x)).toBe(470);
+ await expect(page.locator('#xp-track')).toBeHidden();await expect(page.locator('#ultimate')).toBeEnabled();
  expect(errors).toEqual([]);
+});
+
+test('target defeat continues toward the attacked location instead of returning to spawn',async({page,isMobile})=>{
+ test.setTimeout(90000);
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto('/');await expect(page.locator('body')).toHaveAttribute('data-ready','true');
+ const press=async(id:string)=>{if(isMobile)await page.locator(id).tap();else await page.locator(id).click();};
+ await press('#retaliation');
+ const attack=async()=>{
+  // Selection recenters the Phaser camera; its inverse matrix updates on render.
+  // Start the gesture only after the displayed frame matches the new scroll.
+  await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+  const p=await page.evaluate(()=>{const d=(window as any).leagueDebug,r=document.querySelector('canvas')!.getBoundingClientRect();return{sx:r.left+d.hero.x-d.camera.x,sy:r.top+d.hero.y-d.camera.y,x:r.left+720-d.camera.x,y:r.top+470-d.camera.y};});
+  await page.mouse.move(p.sx,p.sy);await page.mouse.down();await page.mouse.move(p.x,p.y,{steps:8});await page.mouse.up();
+  await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.command)).toBe('attack');
+ };
+ await attack();
+ // Mobile pointer coordinates can round by half a pixel. Compare against the
+ // actual accepted order, then ensure combat never changes that destination.
+ const destination=await page.evaluate(()=>(window as any).leagueDebug.anchor);
+ expect(Math.hypot(destination.x-720,destination.y-470)).toBeLessThan(2);
+ await press('#champion-annie');await attack();await press('#champion-renekton');
+ await expect.poll(()=>page.evaluate(()=>{const e=(window as any).leagueDebug.enemies[0];return !e.alive||e.generation>0;}),{timeout:60000}).toBe(true);
+ await expect.poll(()=>page.evaluate(p=>{const h=(window as any).leagueDebug.hero;return Math.hypot(h.x-p.x,h.y-p.y);},destination),{timeout:15000}).toBeLessThan(1);
+ const d=await page.evaluate(()=>(window as any).leagueDebug);
+ expect(d.anchor).toEqual(destination);
+ expect(d.hero.x).toBeGreaterThan(700);expect(errors).toEqual([]);
 });

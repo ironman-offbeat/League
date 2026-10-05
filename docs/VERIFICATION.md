@@ -66,3 +66,11 @@
 ### WebKit first-wave timing
 
 The initial PR run passed 19 browser cases but the new WebKit wave check exceeded its 15-second wall-time budget. Its captured DOM showed the match running at 00:08 with two simulation seconds until the first wave; resume was working. The check now separately verifies unpaused state and clock advancement, then allows 35 wall seconds to reach the unchanged 10-second simulation threshold. No game timing or frame cap was relaxed. Final status is recorded by Verify game for the amended commit.
+
+## Attack-move and lane progression — 2026-10-05
+
+- The former return-to-old-anchor rule is superseded by the user's attack-move requirement. Orders snapshot destination and target generation; route combat and post-kill continuation share ordinary attack logic.
+- Updated former return behavior cases and added moving-target destination, en-route fighting, explicit-target priority, replacement commands, target respawn and ranged killing-projectile cases.
+- Added progression checks for XP thresholds/cap/fractions, once-only rewards, eligibility, team income, real stat growth, ultimate unlock and mana reservation, death/respawn, temporary HP buffs and reset/end-state isolation.
+- Browser regression uses real drag orders and combat deaths, without state mutation shortcuts, to check that the hero reaches the attacked location. Lane HUD tests also cover gold, XP, ultimate gating, pause and reset.
+- Final results are attached to this commit's Verify game run. Equipment and higher skill ranks are not included.

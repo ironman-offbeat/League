@@ -17,7 +17,7 @@ export class Abilities {
   missiles:{point:Point;direction:Point;remaining:number;kind:'hook'|'arrow'}[]=[];
   pull:Point|null=null;
   constructor(owner:Combat){this.owner=owner;}
-  get reserve(){return this.presentation('ultimate').cost;}
+  get reserve(){return this.owner.progression.ultimateUnlocked?this.presentation('ultimate').cost:0;}
   presentation(slot:SkillSlot):SkillPresentation {
     const kit=this.owner.profile.kit;
     const {flame,frost,curse}=SKILLS;
@@ -32,7 +32,7 @@ export class Abilities {
     if(kit==='frost')return{key:'E',name:'정찰',aim:'point',cost:frost.scout.cost,cooldown:frost.scout.cooldown,range:frost.scout.range,hint:'지정 지역 5초 공개'};
     return{key:'Q',name:'붕대',aim:'direction',cost:curse.hook.cost,cooldown:curse.hook.cooldown,range:curse.hook.range,hint:'첫 대상에게 이동'};
   }
-  canCast(slot:SkillSlot){const c=this.owner,p=this.presentation(slot);return c.canAct&&!c.dash&&!this.pull&&c.cooldown[slot==='manual'?'dash':'ultimate']<=0&&c.hero.mana>=p.cost&&!(c.hero.rooted>0&&slot==='manual'&&(c.profile.kit==='fury'||c.profile.kit==='curse'));}
+  canCast(slot:SkillSlot){const c=this.owner,p=this.presentation(slot);return (slot!=='ultimate'||c.progression.ultimateUnlocked)&&c.canAct&&!c.dash&&!this.pull&&c.cooldown[slot==='manual'?'dash':'ultimate']<=0&&c.hero.mana>=p.cost&&!(c.hero.rooted>0&&slot==='manual'&&(c.profile.kit==='fury'||c.profile.kit==='curse'));}
   cast(slot:SkillSlot,point?:Point){
     const c=this.owner,p=this.presentation(slot),kit=c.profile.kit;
     if(!this.canCast(slot))return false;
@@ -82,7 +82,7 @@ export class Abilities {
       if(c.cooldown.q<=0&&distance(c.hero,target)<=c.profile.stats.range+.001&&this.pay(s.q.cost)){c.cooldown.q=s.q.cooldown;this.haste=s.q.duration;return true;}
       if(skillTarget(target)&&c.cooldown.w<=0&&distance(c.hero,target)<=s.w.range&&this.pay(s.w.cost)){
         c.cooldown.w=s.w.cooldown;
-        for(const e of c.enemies.filter(e=>e.alive&&skillTarget(e)&&c.canSee(e)&&inCone(c.hero,target,e,s.w.range,s.w.angle))){c.hurt(e,s.w.damage+c.profile.stats.attack*s.w.ad,'W');applySlow(e,s.w.slow,s.w.duration);}
+        for(const e of c.enemies.filter(e=>e.alive&&skillTarget(e)&&c.canSee(e)&&inCone(c.hero,target,e,s.w.range,s.w.angle))){c.hurt(e,s.w.damage+c.stats.attack*s.w.ad,'W');applySlow(e,s.w.slow,s.w.duration);}
         c.events.push({kind:'slash',point:{...c.hero}});return true;
       }
     } else if(kit==='curse'){
@@ -104,7 +104,7 @@ export class Abilities {
     if(this.pet)this.stepPet(dt);
     if(c.profile.kit==='curse'){
       const a=SKILLS.curse.aura,targets=c.enemies.filter(e=>e.alive&&skillTarget(e)&&c.canSee(e)&&distance(c.hero,e)<=a.range);
-      const canAura=c.canAct&&!this.pull&&!c.dash&&['idle','attack'].includes(c.command.kind)&&targets.length>0&&c.hero.mana-a.costPerSecond*dt>=this.reserve;
+      const canAura=c.canAct&&!this.pull&&!c.dash&&['idle','attack','attackMove'].includes(c.command.kind)&&targets.length>0&&c.hero.mana-a.costPerSecond*dt>=this.reserve;
       if(this.aura&&!canAura){this.aura=false;this.auraLock=a.restart;}
       if(canAura&&this.auraLock<=0){this.aura=true;c.hero.mana-=a.costPerSecond*dt;for(const e of targets)c.hurt(e,(a.damage+e.maxHp*a.hpRatio)*dt,'W',false,'magic');}
     }
@@ -117,7 +117,7 @@ export class Abilities {
       const hit=c.enemies.filter(e=>e.alive&&skillTarget(e)&&(m.kind==='hook'||e.kind!=='minion')).map(e=>({e,...alongSegment(m.point,end,e)})).filter(h=>h.distance<=cfg.radius+18).sort((a,b)=>a.t-b.t)[0]?.e;
       m.remaining-=length;m.point=end;
       if(hit){c.hurt(hit,cfg.damage,m.kind==='hook'?'Q':'R',true,'magic');applyCC(hit,'stunned',cfg.stun);
-        if(m.kind==='hook'&&c.canAct&&c.hero.rooted<=0){this.pull=towards(hit,c.hero,c.profile.stats.range);c.anchor={...this.pull};c.command={kind:'attack',targetId:hit.id};c.lastSeen={x:hit.x,y:hit.y};c.pending=null;}
+        if(m.kind==='hook'&&c.canAct&&c.hero.rooted<=0){c.attack(hit.id);this.pull=towards(hit,c.hero,c.profile.stats.range);}
         return false;
       }
       return m.remaining>0;
