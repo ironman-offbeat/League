@@ -150,8 +150,12 @@ test('target defeat continues toward the attacked location instead of returning 
  const press=async(id:string)=>{if(isMobile)await page.locator(id).tap();else await page.locator(id).click();};
  await press('#retaliation');
  const attack=async()=>{
+  // Selection recenters the Phaser camera; its inverse matrix updates on render.
+  // Start the gesture only after the displayed frame matches the new scroll.
+  await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
   const p=await page.evaluate(()=>{const d=(window as any).leagueDebug,r=document.querySelector('canvas')!.getBoundingClientRect();return{sx:r.left+d.hero.x-d.camera.x,sy:r.top+d.hero.y-d.camera.y,x:r.left+720-d.camera.x,y:r.top+470-d.camera.y};});
   await page.mouse.move(p.sx,p.sy);await page.mouse.down();await page.mouse.move(p.x,p.y,{steps:8});await page.mouse.up();
+  await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.command)).toBe('attack');
  };
  await attack();
  // Mobile pointer coordinates can round by half a pixel. Compare against the
