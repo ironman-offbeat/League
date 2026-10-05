@@ -81,3 +81,12 @@ The initial PR run passed 19 browser cases but the new WebKit wave check exceede
 - Skill coverage checks every level's fixed learning order, R at 4/8/12, training isolation, AD/AP rank tables and actual cast/projectile/pet damage.
 - Browser coverage adds a real passive-income-funded armor purchase, individual inventory/shared wealth, out-of-fountain rejection, mode/reset cleanup and mobile shop screenshots. No browser state mutation is used to grant money or ranks.
 - Exact executed test and build results are recorded in the commit's Verify game workflow. Physical iPhone Safari testing remains user QA.
+
+
+## Opposing champion AI — 2026-10-06
+
+- Added regression tests for live target health/shields/CC, single owner status/respawn clocks, generation-safe missiles, once-only rewards, both team budgets and tower defense through shields.
+- AI tests cover first-wave timing, ordinary commands/windup, visibility, resource/rank gating, potions, latched retreat, safe recall (including tower danger), recovery and long-match bounded entities.
+- Browser scenario uses real mode/rally buttons and combat to observe enemy advance/damage, then pause and reset; no state mutation is used. PC/mobile screenshots distinguish enemy rings and health/name labels. Existing shop/attack-move/touch regressions remain enabled.
+- The old undefended siege victory test explicitly disables enemy champions to isolate building rules. Default-mode AI matches have their own combat/growth/end-freeze checks.
+- Exact executed final results are in this commit's Verify game workflow. Physical-device Korean font/rendering and difficulty remain user QA.

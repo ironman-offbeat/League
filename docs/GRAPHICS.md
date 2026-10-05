@@ -71,3 +71,8 @@ icons:{'skill.fury.manual':'/assets/icons/dash.webp'},
 ## Item UI keys
 
 Shop icons optionally use `ASSETS.icons` keys `item.weapon`, `item.armor`, `item.health`, `item.mana`, `item.mixed`. Missing images retain text labels. Item icons are presentation-only; tiers, price and effects live in `src/game/equipment.ts` and skill rank values in `src/game/skillRanks.ts`.
+
+
+## Opposing champion identity
+
+`Combat.profile.id` identifies a unique entity (for example `red-annie`); `Combat.visualId` selects the shared champion art (`annie`). Champion and basic projectile assets retain `champion.annie` / `projectile.annie.basic` keys for both teams. Sprite lifecycle identity is the Combat object, so opposing copies never reuse a sprite. Team rings, health colors, target selection and names are drawn independently of custom art. AI and target adapters have no renderer imports.

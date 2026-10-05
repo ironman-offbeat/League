@@ -1,4 +1,25 @@
 import { test, expect } from '@playwright/test';
+test('enemy champions advance, fight, pause and reset with separate identities',async({page,isMobile},info)=>{
+ test.setTimeout(90000);
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto('/');await expect(page.locator('body')).toHaveAttribute('data-ready','true');
+ const press=async(id:string)=>{if(isMobile)await page.locator(id).tap();else await page.locator(id).click();};
+ await press('#mode');await expect(page.locator('.version')).toHaveText('07');
+ const initial=await page.evaluate(()=>(window as any).leagueDebug.match.opponents);
+ expect(initial).toHaveLength(4);expect(new Set(initial.map((c:any)=>c.id)).size).toBe(4);
+ expect(initial.every((c:any)=>c.id.startsWith('red-')&&c.level===1&&c.equipment.weapon===1)).toBe(true);
+ await press('#rally');await press('#front-camera');
+ await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.match.opponents.every((c:any)=>c.hero.x<1300)),{timeout:45000}).toBe(true);
+ await expect.poll(()=>page.evaluate(()=>{const d=(window as any).leagueDebug;return d.match.opponents.some((c:any)=>c.hero.hp<c.hero.maxHp)&&d.members.some((c:any)=>c.damage>0);}),{timeout:40000}).toBe(true);
+ await page.screenshot({path:`test-results/ai-${info.project.name}.png`});
+ await press('#pause');
+ const before=await page.evaluate(()=>JSON.stringify((window as any).leagueDebug.match));
+ await page.waitForTimeout(500);expect(await page.evaluate(()=>JSON.stringify((window as any).leagueDebug.match))).toBe(before);
+ await press('#resume');await press('#reset');
+ expect(await page.evaluate(()=>(window as any).leagueDebug.match.kills)).toEqual({blue:0,red:0});
+ expect(await page.evaluate(()=>(window as any).leagueDebug.match.opponents.every((c:any)=>c.life===0&&c.hero.hp===c.hero.maxHp&&c.level===1))).toBe(true);
+ await press('#mode');expect(await page.evaluate(()=>(window as any).leagueDebug.match)).toBe(null);expect(errors).toEqual([]);
+});
 test('lane shop spends shared gold, upgrades only the selected hero and resets cleanly',async({page,isMobile},info)=>{
  test.setTimeout(150000);
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));

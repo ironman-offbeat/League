@@ -8,6 +8,8 @@ import { damageTarget } from './targets.ts';
 import type { Target } from './targets.ts';
 import type { Pet } from './Abilities.ts';
 import { PROGRESSION, TeamEconomy } from './progression.ts';
+import { championTarget } from './championTarget.ts';
+import { LaneAI } from './LaneAI.ts';
 import { EQUIPMENT } from './equipment.ts';
 import type { Purchase } from './equipment.ts';
 
@@ -21,7 +23,7 @@ export const LANE = {
   siege:{hp:650,armor:15,range:175,attack:55,interval:2,speed:60},
   spawns:[{x:180,y:470},{x:115,y:435},{x:115,y:565},{x:180,y:530}],
 } as const;
-type Team='blue'|'red';
+export type Team='blue'|'red';
 type MinionClass='melee'|'ranged'|'siege';
 export type LaneUnit=Target & {team:Team;kind:'minion'|'building';role:MinionClass|'tower'|'nexus'};
 type Victim={point:Point;unit?:LaneUnit;actor?:Combat;pet?:Pet;life?:number};
@@ -30,7 +32,15 @@ export type MatchResult='victory'|'defeat'|'draw';
 
 export class LaneMatch extends Squad {
   units:LaneUnit[]=[];
-  enemies:LaneUnit[]=[];
+  enemies:Target[]=[];
+  opponents:Combat[]=[];
+  private redTargets:Target[]=[];
+  championTargets:Target[]=[];
+  ai:LaneAI[]=[];
+  kills={blue:0,red:0};
+  get actors(){return [...this.members,...this.opponents];}
+  teamOf(c:Combat):Team{return this.opponents.includes(c)?'red':'blue';}
+  teamMembers(team:Team){return team==='blue'?this.members:this.opponents;}
   elapsed=0;
   wave=0;
   nextWave:number=LANE.firstWave;
@@ -38,8 +48,14 @@ export class LaneMatch extends Squad {
   economy={blue:new TeamEconomy(),red:new TeamEconomy()};
   towerShots=new Map<string,TowerShot>();
   private towerFocus=new Map<string,{key:unknown;hits:number}>();
+  private towerProvoker(tower:LaneUnit){
+    const alliedIds=new Set(this.teamMembers(tower.team).map(c=>c.profile.id));
+    const aggressors=new Set(this.championTargets.filter(t=>alliedIds.has(t.id)&&t.alert>0).map(t=>t.aggro));
+    const actor=this.teamMembers(tower.team==='blue'?'red':'blue').find(c=>c.alive&&aggressors.has(c.profile.id)&&distance(c.hero,tower)<=LANE.tower.range);
+    return actor?{actor,point:actor.hero,life:actor.life}:undefined;
+  }
   private serial=0;
-  constructor(){
+  constructor(options:{enemyChampions?:boolean;ai?:boolean}={}){
     super(false);
     for(const team of ['blue','red'] as const){
       this.units.push(this.createUnit(team,'tower',team==='blue'?440:1160,LANE.y));
@@ -53,10 +69,31 @@ export class LaneMatch extends Squad {
       c.autoTargetAllowed=target=>target.kind!=='building'||this.supported(target,'blue');
       return c;
     });
+    this.redTargets.push(...this.units.filter(u=>u.team==='blue'));
+    if(options.enemyChampions!==false){
+      this.opponents=CHAMPIONS.map((profile,i)=>{
+        const c=new Combat({...profile,id:`red-${profile.id}`,spawn:{x:1600-LANE.spawns[i].x,y:1000-LANE.spawns[i].y}},this.redTargets);
+        c.visualId=profile.id;c.hero.facing=Math.PI;c.progression.enabled=true;c.initializeEquipment();
+        c.autoTargetAllowed=target=>target.kind!=='building'||this.supported(target,'red');
+        return c;
+      });
+      const blue=this.members.map(championTarget),red=this.opponents.map(championTarget);
+      this.championTargets.push(...blue,...red);this.enemies.push(...red);this.redTargets.push(...blue);
+      for(const c of this.actors)c.onDeath=()=>this.rewardChampion(c);
+      if(options.ai!==false)this.ai=this.opponents.map((c,i)=>new LaneAI(this,c,i));
+    }
     this.updateProtection();
   }
+  private rewardChampion(victim:Combat){
+    if(this.result)return;
+    const team=this.teamOf(victim)==='blue'?'red':'blue';
+    this.kills[team]++;
+    this.economy[team].add(120);
+    const eligible=this.teamMembers(team).filter(c=>c.alive&&!c.progression.capped&&distance(c.hero,victim.hero)<=PROGRESSION.rewardRange);
+    for(const c of eligible)c.gainExperience((120+victim.progression.level*20)/eligible.length);
+  }
   shopReason(c:Combat,item:Purchase){
-    if(this.result||!this.members.includes(c))return '경기 종료';
+    if(this.result||!this.actors.includes(c))return '경기 종료';
     if(c.alive&&distance(c.hero,c.profile.spawn)>=EQUIPMENT.fountainRadius)return '우물에서만 구매 가능';
     const price=c.equipment.price(item);
     if(price===null)return '최대 단계';
@@ -64,12 +101,12 @@ export class LaneMatch extends Squad {
       if(c.equipment.potion)return '포션 슬롯이 가득 참';
       if(c.maxMana===0&&item!=='health')return '분노 챔피언은 구매 불가';
     }
-    if(this.economy.blue.gold+1e-8<price)return '팀 골드 부족';
+    if(this.economy[this.teamOf(c)].gold+1e-8<price)return '팀 골드 부족';
     return '';
   }
   purchase(c:Combat,item:Purchase){
     if(this.shopReason(c,item))return false;
-    const price=c.equipment.price(item);if(price===null||!this.economy.blue.spend(price))return false;
+    const price=c.equipment.price(item);if(price===null||!this.economy[this.teamOf(c)].spend(price))return false;
     if(item==='weapon')c.equipment.weapon++;
     else if(item==='armor'){
       const before=EQUIPMENT.health[c.equipment.armor];c.equipment.armor++;
@@ -88,7 +125,7 @@ export class LaneMatch extends Squad {
   private reward(unit:LaneUnit){
     if(this.result)return;
     const team=unit.team==='blue'?'red':'blue',reward=PROGRESSION.rewards[unit.role];
-    const nearby=team==='blue'?this.members.filter(c=>c.alive&&distance(c.hero,unit)<=PROGRESSION.rewardRange):[];
+    const nearby=this.teamMembers(team).filter(c=>c.alive&&distance(c.hero,unit)<=PROGRESSION.rewardRange);
     if(unit.kind==='building'||nearby.length)this.economy[team].add(reward.gold);
     const eligible=nearby.filter(c=>!c.progression.capped);
     for(const c of eligible)c.gainExperience(reward.xp/eligible.length);
@@ -108,13 +145,13 @@ export class LaneMatch extends Squad {
     for(const team of ['blue','red'] as const)roles.forEach((role,i)=>{
       const direction=team==='blue'?1:-1;
       const unit=this.createUnit(team,role,(team==='blue'?160:1440)-direction*Math.floor(i/3)*35,LANE.y+(i%3-1)*32);
-      this.units.push(unit);if(team==='red')this.enemies.push(unit);
+      this.units.push(unit);(team==='red'?this.enemies:this.redTargets).push(unit);
     });
   }
   private valid(v:Victim){return v.unit?v.unit.alive:!!v.actor?.alive&&v.actor.life===v.life&&(!v.pet||(v.actor.abilities.pet===v.pet&&v.pet.hp>0));}
   private defenders(attacker:LaneUnit):Victim[]{
     const candidates:Victim[]=this.units.filter(u=>u.team!==attacker.team&&u.alive&&!u.protected).map(unit=>({unit,point:unit}));
-    if(attacker.team==='red')for(const actor of this.members.filter(c=>c.alive)){
+    for(const actor of this.teamMembers(attacker.team==='red'?'blue':'red').filter(c=>c.alive)){
       candidates.push({actor,point:actor.hero,life:actor.life});
       if(actor.abilities.pet)candidates.push({actor,pet:actor.abilities.pet,point:actor.abilities.pet,life:actor.life});
     }
@@ -133,11 +170,13 @@ export class LaneMatch extends Squad {
     if(this.elapsed+1e-8>=this.nextWave){this.spawnWave();this.nextWave+=LANE.waveInterval;}
     Combat.stepEnemies(this.units,dt);
     this.updateProtection();
-    for(const c of this.members){
+    for(const target of this.championTargets){target.revealed=Math.max(0,target.revealed-dt);target.alert=Math.max(0,target.alert-dt);}
+    for(const brain of this.ai)brain.step(dt);
+    for(const c of this.actors){
       // Automatic siege stops when its escort dies. Explicit attack orders remain risky by choice.
-      const tower=this.structure('red','tower');
-      if(c.alive&&c.command.kind==='idle'&&tower.alive&&!this.supported(tower,'blue')&&distance(c.hero,tower)<=LANE.tower.range){
-        c.move({x:tower.x-LANE.tower.range-50,y:c.hero.y});
+      const team=this.teamOf(c),tower=this.structure(team==='blue'?'red':'blue','tower');
+      if(c.alive&&c.command.kind==='idle'&&tower.alive&&!this.supported(tower,team)&&distance(c.hero,tower)<=LANE.tower.range){
+        c.move({x:tower.x+(team==='blue'?-1:1)*(LANE.tower.range+50),y:c.hero.y});
       }
       c.step(dt,false);
     }
@@ -147,6 +186,11 @@ export class LaneMatch extends Squad {
       if(!unit.alive||unit.role==='nexus')continue;
       if(unit.kind==='building'){
         const shot=this.towerShots.get(unit.id);
+        const provoker=this.towerProvoker(unit);
+        if(shot&&provoker&&shot.target.actor!==provoker.actor){
+          // Give the newly targeted hero a full, escapable warning, never an instant hit.
+          shot.target=provoker;shot.remaining=LANE.tower.windup;
+        }
         if(shot){
           if(!this.valid(shot.target)||distance(unit,shot.target.point)>LANE.tower.range){this.towerShots.delete(unit.id);continue;}
           shot.remaining-=dt;
@@ -157,7 +201,7 @@ export class LaneMatch extends Squad {
             this.towerFocus.set(unit.id,{key,hits:hitsInRow+1});this.towerShots.delete(unit.id);
           }
         }else if(unit.attackCooldown<=0){
-          const target=this.defenders(unit).filter(v=>v.unit?.kind!=='building'&&distance(unit,v.point)<=LANE.tower.range)
+          const target=provoker??this.defenders(unit).filter(v=>v.unit?.kind!=='building'&&distance(unit,v.point)<=LANE.tower.range)
             .sort((a,b)=>Number(b.unit?.kind==='minion')-Number(a.unit?.kind==='minion')||distance(unit,a.point)-distance(unit,b.point))[0];
           if(target){this.towerShots.set(unit.id,{tower:unit,target,remaining:LANE.tower.windup});unit.attackCooldown=LANE.tower.interval;}
           else this.towerFocus.delete(unit.id);
@@ -180,6 +224,6 @@ export class LaneMatch extends Squad {
     if(!blue||!red){this.result=!blue&&!red?'draw':red?'defeat':'victory';this.towerShots.clear();return;}
     for(const [id,shot] of this.towerShots)if(!shot.tower.alive)this.towerShots.delete(id);
     // Keep shared enemy-array identity and drop dead wave units; projectiles retain safe dead references.
-    for(const array of [this.units,this.enemies])for(let i=array.length-1;i>=0;i--)if(!array[i].alive&&array[i].kind==='minion')array.splice(i,1);
+    for(const array of [this.units,this.enemies,this.redTargets])for(let i=array.length-1;i>=0;i--)if(!array[i].alive&&array[i].kind==='minion')array.splice(i,1);
   }
 }

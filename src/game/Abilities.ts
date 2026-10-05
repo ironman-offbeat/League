@@ -84,7 +84,7 @@ export class Abilities {
       if(c.ranks.Q>0&&c.cooldown.q<=0&&distance(c.hero,target)<=q.range&&this.pay(q.cost)){c.cooldown.q=q.cooldown;c.hurt(target,q.damage,'Q',true,'magic');this.stacks=Math.min(this.config.flame.passive.stacks,this.stacks+1);return true;}
     } else if(kit==='frost'){
       const s=this.config.frost;
-      if(c.cooldown.q<=0&&distance(c.hero,target)<=c.profile.stats.range+.001&&this.pay(s.q.cost)){c.cooldown.q=s.q.cooldown;this.haste=s.q.duration;this.hasteBonus=s.q.haste;return true;}
+      if(c.ranks.Q>0&&c.cooldown.q<=0&&distance(c.hero,target)<=c.profile.stats.range+.001&&this.pay(s.q.cost)){c.cooldown.q=s.q.cooldown;this.haste=s.q.duration;this.hasteBonus=s.q.haste;return true;}
       if(c.ranks.W>0&&skillTarget(target)&&c.cooldown.w<=0&&distance(c.hero,target)<=s.w.range&&this.pay(s.w.cost)){
         c.cooldown.w=s.w.cooldown;
         for(const e of c.enemies.filter(e=>e.alive&&skillTarget(e)&&c.canSee(e)&&inCone(c.hero,target,e,s.w.range,s.w.angle))){c.hurt(e,s.w.damage+c.stats.attack*s.w.ad,'W');applySlow(e,s.w.slow,s.w.duration);}
