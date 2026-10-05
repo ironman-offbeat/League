@@ -74,3 +74,10 @@ The initial PR run passed 19 browser cases but the new WebKit wave check exceede
 - Added progression checks for XP thresholds/cap/fractions, once-only rewards, eligibility, team income, real stat growth, ultimate unlock and mana reservation, death/respawn, temporary HP buffs and reset/end-state isolation.
 - Browser regression uses real drag orders and combat deaths, without state mutation shortcuts, to check that the hero reaches the attacked location. Lane HUD tests also cover gold, XP, ultimate gating, pause and reset.
 - Final results are attached to this commit's Verify game run. Equipment and higher skill ranks are not included.
+
+## Equipment and ranked skills — 2026-10-05
+
+- Regression coverage includes shared atomic gold spending, fountain/death purchase eligibility, tier totals, missing-HP preservation, death/ultimate interactions, potion slot/resource restrictions and timed recovery.
+- Skill coverage checks every level's fixed learning order, R at 4/8/12, training isolation, AD/AP rank tables and actual cast/projectile/pet damage.
+- Browser coverage adds a real passive-income-funded armor purchase, individual inventory/shared wealth, out-of-fountain rejection, mode/reset cleanup and mobile shop screenshots. No browser state mutation is used to grant money or ranks.
+- Exact executed test and build results are recorded in the commit's Verify game workflow. Physical iPhone Safari testing remains user QA.

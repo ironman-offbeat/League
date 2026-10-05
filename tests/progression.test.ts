@@ -47,8 +47,8 @@ test('tower bounty is global, while basic, skill and minion kills use the same r
 test('level growth changes real stats without mutating shared champion data or refilling lost health',()=>{
  for(const [i,profile] of CHAMPIONS.entries()){
   const before=JSON.stringify(profile),c=new LaneMatch().members[i];c.hero.hp-=100;c.hero.mana=Math.max(0,c.hero.mana-100);const hp=c.hero.hp,mana=c.hero.mana;
-  c.gainExperience(100);assert.equal(c.progression.level,2);assert.equal(c.hero.maxHp,profile.stats.hp+profile.growth.hp);assert.equal(c.hero.hp,hp+profile.growth.hp);assert.equal(c.hero.mana,mana+profile.growth.mana);
-  assert.equal(c.stats.attack,profile.stats.attack+profile.growth.attack);assert.equal(c.armor,profile.armor+profile.growth.armor);assert.equal(c.magicResist,profile.magicResist+profile.growth.magicResist);near(c.stats.attackInterval,profile.stats.attackInterval/1.02);assert.equal(JSON.stringify(profile),before);
+  c.gainExperience(100);assert.equal(c.progression.level,2);assert.equal(c.hero.maxHp,profile.stats.hp+profile.growth.hp+100);assert.equal(c.hero.hp,hp+profile.growth.hp);assert.equal(c.hero.mana,mana+profile.growth.mana);
+  assert.equal(c.stats.attack,profile.stats.attack+profile.growth.attack+(['fury','frost'].includes(profile.kit)?10:0));assert.equal(c.armor,profile.armor+profile.growth.armor+5);assert.equal(c.magicResist,profile.magicResist+profile.growth.magicResist+5);near(c.stats.attackInterval,profile.stats.attackInterval/1.02);assert.equal(JSON.stringify(profile),before);
  }
 });
 test('ultimate unlock and mana reservation switch at level four; training retains its unlocked kit',()=>{
@@ -57,7 +57,7 @@ test('ultimate unlock and mana reservation switch at level four; training retain
 });
 test('growth survives death and recall, changes respawn delay, and does not corrupt temporary max HP',()=>{
  const c=new LaneMatch().members[0];c.gainExperience(420);assert.ok(c.castUltimate());const bonus=c.hero.maxHp;c.gainExperience(220);assert.equal(c.hero.maxHp,bonus+95);
- c.receiveDamage(1e6);assert.equal(c.hero.maxHp,850+4*95);assert.equal(c.respawnRemaining,12.5);step(c,12.6);assert.ok(c.alive);assert.equal(c.hero.hp,c.hero.maxHp);assert.equal(c.progression.level,5);
+ c.receiveDamage(1e6);assert.equal(c.hero.maxHp,850+4*95+100);assert.equal(c.respawnRemaining,12.5);step(c,12.6);assert.ok(c.alive);assert.equal(c.hero.hp,c.hero.maxHp);assert.equal(c.progression.level,5);
  c.elapsed=480;c.receiveDamage(1e6);assert.equal(c.respawnRemaining,16.5);
 });
 test('new matches reset both personal XP and team wealth; no reward occurs after match completion',()=>{
@@ -66,7 +66,7 @@ test('new matches reset both personal XP and team wealth; no reward occurs after
 });
 test('levelled attack and defenses affect actual damage, not just displayed stats',()=>{
  const m=new LaneMatch(),c=m.members[0],tower=m.structure('red','tower');c.gainExperience(100);
- const before=c.hero.hp,lost=c.receiveDamage(100);near(lost,100*100/133);near(before-c.hero.hp,lost);
+ const before=c.hero.hp,lost=c.receiveDamage(100);near(lost,100*100/138);near(before-c.hero.hp,lost);
  c.hero.x=tower.x-60;c.hero.y=tower.y;c.cooldown.q=100;c.attack(tower.id);
- const hp=tower.hp;step(c,.3);near(hp-tower.hp,68*.25*100/140);
+ const hp=tower.hp;step(c,.3);near(hp-tower.hp,78*.25*100/140);
 });

@@ -1,3 +1,5 @@
+import { setupShop } from './shopUI.ts';
+import type { SkillKey } from './game/skillRanks.ts';
 import { ASSETS, skillVisual } from './render/assets.ts';
 import Phaser from 'phaser';
 import './style.css';
@@ -7,6 +9,7 @@ import { ArenaScene } from './game/ArenaScene.ts';
 
 const el=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id) as T;
 const scene=new ArenaScene();
+const updateShop=setupShop(scene);
 CHAMPIONS.forEach((p,i)=>{
   const b=document.createElement('button');b.id=`champion-${p.id}`;b.setAttribute('aria-label',`${p.name} 선택`);
   b.innerHTML=`<b>${p.symbol}</b><span>${p.name}<small></small></span>`;
@@ -21,6 +24,7 @@ function syncPause(){skillDrag=null;scene.setPaused(manualPause||helpOpen||backg
 scene.notify=text=>{if(lastToast!==text){el('toast').textContent=text;lastToast=text;}};
 scene.onFrame=s=>{
   const c=s.combat,match=s.match;
+  updateShop();
   el('mode').textContent=match?'연습장으로':'한 라인 경기';
   el('session-name').textContent=match?'한 라인 공성':'조작 연습장';
   el('retaliation').hidden=!!match;el('training-objectives').hidden=!!match;el('match-hud').hidden=!match;
@@ -62,8 +66,8 @@ scene.onFrame=s=>{
     const iconId=skillVisual(c.profile.kit,slot),icon=ASSETS.icons[iconId];
     const key=button.querySelector('b')!;
     if(key.dataset.visual!==iconId){key.dataset.visual=iconId;key.textContent=p.key;if(icon){const image=new Image();image.src=icon;image.alt='';image.onload=()=>{if(key.dataset.visual===iconId)key.replaceChildren(image);};}}
-    button.querySelector('span')!.textContent=p.name;button.querySelector('small')!.textContent=p.hint;
-    el(cdId).textContent=slot==='ultimate'&&!c.progression.ultimateUnlocked?'Lv. 4 해금':!c.alive?'부활 중':cd>0?Math.ceil(cd).toString():c.hero.mana<p.cost?'마나 부족':'';
+    button.querySelector('span')!.textContent=p.name;button.querySelector('small')!.textContent=`${c.ranks[p.key as SkillKey]}단계 · ${p.hint}`;
+    el(cdId).textContent=!c.ranks[p.key as SkillKey]?(slot==='ultimate'?'Lv. 4 해금':'미습득'):!c.alive?'부활 중':cd>0?Math.ceil(cd).toString():c.hero.mana<p.cost?'마나 부족':'';
     button.disabled=s.blocked||!c.abilities.canCast(slot);button.classList.toggle('armed',s.aimSlot===slot);
     button.setAttribute('aria-label',`${p.name} ${p.key}`);
   }
@@ -112,4 +116,4 @@ document.addEventListener('contextmenu',e=>e.preventDefault());
 window.addEventListener('keydown',e=>{if(e.repeat)return;if(e.code==='Space'){e.preventDefault();manualPause=!manualPause;syncPause();}if(e.code==='Escape'){skillDrag=null;scene.cancelGesture();}});
 
 // Read-only diagnostics for repeatable browser verification, no mutation shortcuts.
-Object.defineProperty(window,'leagueDebug',{get:()=>({visuals:scene.visualCounts,mode:scene.match?'lane':'training',match:scene.match?{elapsed:scene.match.elapsed,wave:scene.match.wave,result:scene.match.result,gold:scene.match.economy.blue.gold,earnedGold:scene.match.economy.blue.earned,units:scene.match.units.map(u=>({...u}))}:null,selected:scene.combat.profile.id,retaliation:scene.squad.retaliation,skillCooldowns:{...scene.combat.cooldown},respawn:scene.combat.respawnRemaining,stacks:scene.combat.abilities.stacks,pet:scene.combat.abilities.pet?{...scene.combat.abilities.pet}:null,members:scene.squad.members.map(c=>({id:c.profile.id,level:c.progression.level,xp:c.progression.xp,anchor:{...c.anchor},hero:{...c.hero},command:c.command.kind,damage:c.damage,elapsed:c.elapsed})),ready:document.body.dataset.ready==='true',paused:scene.paused,hero:{...scene.combat.hero},anchor:{...scene.combat.anchor},level:scene.combat.progression.level,xp:scene.combat.progression.xp,command:scene.combat.command.kind,damage:scene.combat.damage,dashCooldown:scene.combat.cooldown.dash,elapsed:scene.combat.elapsed,enemies:scene.combat.enemies.map(e=>({...e})),camera:{x:scene.cameras.main?.scrollX??0,y:scene.cameras.main?.scrollY??0},completed:{...scene.combat.completed}})});
+Object.defineProperty(window,'leagueDebug',{get:()=>({visuals:scene.visualCounts,mode:scene.match?'lane':'training',match:scene.match?{elapsed:scene.match.elapsed,wave:scene.match.wave,result:scene.match.result,gold:scene.match.economy.blue.gold,earnedGold:scene.match.economy.blue.earned,units:scene.match.units.map(u=>({...u}))}:null,selected:scene.combat.profile.id,retaliation:scene.squad.retaliation,skillCooldowns:{...scene.combat.cooldown},respawn:scene.combat.respawnRemaining,stacks:scene.combat.abilities.stacks,pet:scene.combat.abilities.pet?{...scene.combat.abilities.pet}:null,members:scene.squad.members.map(c=>({id:c.profile.id,level:c.progression.level,xp:c.progression.xp,anchor:{...c.anchor},hero:{...c.hero},command:c.command.kind,damage:c.damage,elapsed:c.elapsed})),ready:document.body.dataset.ready==='true',paused:scene.paused,hero:{...scene.combat.hero},anchor:{...scene.combat.anchor},equipment:{weapon:scene.combat.equipment.weapon,armor:scene.combat.equipment.armor,potion:scene.combat.equipment.potion,active:scene.combat.equipment.active?{...scene.combat.equipment.active}:null},ranks:{...scene.combat.ranks},level:scene.combat.progression.level,xp:scene.combat.progression.xp,command:scene.combat.command.kind,damage:scene.combat.damage,dashCooldown:scene.combat.cooldown.dash,elapsed:scene.combat.elapsed,enemies:scene.combat.enemies.map(e=>({...e})),camera:{x:scene.cameras.main?.scrollX??0,y:scene.cameras.main?.scrollY??0},completed:{...scene.combat.completed}})});

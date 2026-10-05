@@ -1,4 +1,28 @@
 import { test, expect } from '@playwright/test';
+test('lane shop spends shared gold, upgrades only the selected hero and resets cleanly',async({page,isMobile},info)=>{
+ test.setTimeout(150000);
+ const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto('/');await expect(page.locator('body')).toHaveAttribute('data-ready','true');
+ const press=async(id:string)=>{if(isMobile)await page.locator(id).tap();else await page.locator(id).click();};
+ await press('#mode');await expect(page.locator('#gear-summary')).toHaveText('무기 T1 · 방어 T1');
+ await expect(page.locator('#rank-summary')).toHaveText('Q 1 · W 잠김 · E 잠김 · R 잠김');
+ await expect(page.locator('#dash')).toBeDisabled();await expect(page.locator('#potion-use')).toBeDisabled();
+ await press('#shop-toggle');await expect(page.locator('#shop-panel')).toBeVisible();
+ await expect(page.locator('#buy-armor')).toBeDisabled();await expect(page.locator('#buy-health')).toBeDisabled();
+ await page.screenshot({path:`test-results/shop-${info.project.name}.png`});
+ await expect(page.locator('#buy-armor')).toBeEnabled({timeout:110000});
+ await press('#buy-armor');await expect(page.locator('#gear-summary')).toHaveText('무기 T1 · 방어 T2');
+ await expect(page.locator('#hp-text')).toHaveText('1070 / 1070');await expect(page.locator('#shop-status')).toContainText('구매 완료');
+ await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.match.gold)).toBeLessThan(30);
+ await page.locator('#shop-champion').selectOption('1');await expect(page.locator('#gear-summary')).toHaveText('무기 T1 · 방어 T1');
+ await expect(page.locator('#buy-armor')).toBeDisabled();await expect(page.locator('#shop-stats')).toContainText('주문력 15');
+ await press('#shop-close');await expect(page.locator('#shop-panel')).toBeHidden();
+ await press('#rally');await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.hero.x)).toBeGreaterThan(230);
+ await press('#shop-toggle');await expect(page.locator('#buy-armor')).toContainText('우물에서만 구매 가능');
+ await press('#shop-close');await press('#reset');await expect(page.locator('#gear-summary')).toHaveText('무기 T1 · 방어 T1');
+ await expect(page.locator('#team-gold')).toHaveText('팀 골드 200');await press('#mode');await expect(page.locator('#inventory')).toBeHidden();
+ expect(errors).toEqual([]);
+});
 test('loads, accepts movement / forced attack / dash and freezes combat while paused',async({page},info)=>{
   const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto('/');await expect(page.locator('body')).toHaveAttribute('data-ready','true');

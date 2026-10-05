@@ -29,6 +29,7 @@ export class Progression {
 export class TeamEconomy {
   gold:number=PROGRESSION.startingGold;
   earned=0;
+  spend(amount:number){if(!Number.isFinite(amount)||amount<0||this.gold+1e-8<amount)return false;this.gold=Math.max(0,this.gold-amount);return true;}
   add(amount:number){if(Number.isFinite(amount)&&amount>0){this.gold+=amount;this.earned+=amount;}}
   advance(from:number,to:number){
     const start=PROGRESSION.passiveGoldStart;
