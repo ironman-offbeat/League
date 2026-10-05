@@ -16,4 +16,4 @@
 - Do not delegate to sub-agents unless the user requests it.
 - User plans to replace all graphics with production art. Keep sprite/atlas/animation/effect/icon mappings in src/render; simulation must never depend on animation completion, texture size, render FPS or asset loading.
 - Graphics use stable entity identity and shared data-driven visual keys. Preserve placeholder fallback, pause, despawn cleanup and mode-reset cleanup when adding assets.
-- Award death rewards once through the shared damage path. XP splits among nearby living, non-capped allies; team gold is paid once. Pure move still suppresses offensive auto combat.\n
+- Award death rewards once through the shared damage path. XP splits among nearby living, non-capped allies; team gold is paid once. Pure move still suppresses offensive auto combat.
