@@ -10,6 +10,8 @@ test('lane shop spends shared gold, upgrades only the selected hero and resets c
  await press('#shop-toggle');await expect(page.locator('#shop-panel')).toBeVisible();
  await expect(page.locator('#buy-armor')).toBeDisabled();await expect(page.locator('#buy-health')).toBeDisabled();
  await page.screenshot({path:`test-results/shop-${info.project.name}.png`});
+ const openedAt=await page.evaluate(()=>(window as any).leagueDebug.match.elapsed);
+ await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.match.elapsed),{timeout:15000}).toBeGreaterThan(openedAt+2);
  await expect(page.locator('#buy-armor')).toBeEnabled({timeout:110000});
  await press('#buy-armor');await expect(page.locator('#gear-summary')).toHaveText('무기 T1 · 방어 T2');
  await expect(page.locator('#hp-text')).toHaveText('1070 / 1070');await expect(page.locator('#shop-status')).toContainText('구매 완료');
