@@ -5,9 +5,8 @@ import type { Combat, Dummy } from './combat.ts';
 import { RULES, distance } from './config.ts';
 import type { Point } from './config.ts';
 import { applyCC, applySlow, inCone, alongSegment, towards } from './effects.ts';
-import { SKILLS } from './skillConfig.ts';
 import type { SkillSlot, SkillPresentation } from './skillConfig.ts';
-export type Pet=Point & {hp:number;remaining:number;cooldown:number;damage:number};
+export type Pet=Point & {hp:number;maxHp:number;remaining:number;cooldown:number;damage:number};
 export class Abilities {
   owner:Combat;
   stacks=0;
@@ -54,7 +53,7 @@ export class Abilities {
       const stun=this.stacks>=cfg.passive.stacks&&hit.length>0;
       for(const e of hit){c.hurt(e,slot==='manual'?cfg.w.damage:cfg.ultimate.damage,p.key,true,'magic');if(stun)applyCC(e,'stunned',cfg.passive.stun);}
       if(stun)this.stacks=0;else if(slot==='manual'&&hit.length)this.stacks=Math.min(cfg.passive.stacks,this.stacks+1);
-      if(slot==='ultimate')this.pet={...center,hp:cfg.pet.hp,remaining:cfg.pet.duration,cooldown:0,damage:cfg.pet.damage};
+      if(slot==='ultimate')this.pet={...center,hp:cfg.pet.hp,maxHp:cfg.pet.hp,remaining:cfg.pet.duration,cooldown:0,damage:cfg.pet.damage};
       c.events.push({kind:'slash',point:{...center}});
     } else if(kit==='frost') {
       if(slot==='manual'){this.scout={...towards(c.hero,point!,p.range),remaining:this.config.frost.scout.duration};this.reveal();}

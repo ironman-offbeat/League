@@ -48,7 +48,7 @@ test('ranked skill tables apply all three levels and AD/AP ratios without mutati
 test('AP gear and ranks change real casts; pet and missiles snapshot cast strength',()=>{
  const m=new LaneMatch(),a=m.members[1];m.economy.blue.gold=5000;a.gainExperience(3300);m.purchase(a,'weapon');m.purchase(a,'weapon');
  const e=new Combat().enemies[0];e.x=a.hero.x+80;e.y=a.hero.y;e.armor=0;e.magicResist=0;e.hp=e.maxHp=10000;a.enemies=[e];
- assert.ok(a.castSkill('manual',e));near(10000-e.hp,239);a.cooldown.ultimate=0;assert.ok(a.castSkill('ultimate',e));assert.equal(a.abilities.pet!.hp,750);assert.equal(a.abilities.pet!.damage,65.5);
+ assert.ok(a.castSkill('manual',e));near(10000-e.hp,239);a.cooldown.ultimate=0;assert.ok(a.castSkill('ultimate',e));assert.equal(a.abilities.pet!.hp,750);assert.equal(a.abilities.pet!.maxHp,750);assert.equal(a.abilities.pet!.damage,65.5);
  const frost=new Combat(CHAMPIONS[2]);frost.progression.enabled=true;frost.gainExperience(420);const target=frost.enemies[0];target.x=frost.hero.x+200;target.y=frost.hero.y;target.magicResist=0;frost.enemies=[target];assert.ok(frost.castSkill('ultimate',target));frost.gainExperience(2880);frost.abilities.step(.5);near(target.maxHp-target.hp,120);assert.equal(target.stunned,1.5);
 });
 test('new match restores equipment and resources, while recall retains upgrades and ranks',()=>{

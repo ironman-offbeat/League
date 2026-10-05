@@ -163,7 +163,7 @@ export class ArenaScene extends Phaser.Scene {
       const a=member.abilities;
       for(const m of a.missiles){if(this.visuals?.draw(m,`projectile.${member.profile.kit}.${m.kind}`,m.point,'walk',Math.atan2(m.direction.y,m.direction.x)))continue;g.fillStyle(member.profile.color);g.fillCircle(m.point.x,m.point.y,m.kind==='arrow'?10:6);}
       if(a.scout&&!this.visuals?.draw(a.scout,'zone.scout',a.scout)){g.lineStyle(2,0x86c9ec,.6);g.strokeCircle(a.scout.x,a.scout.y,SKILLS.frost.scout.radius);}
-      if(a.pet){const p=a.pet;if(!this.visuals?.draw(p,`pet.${member.profile.kit}`,p)){g.fillStyle(0xa47258);g.fillRoundedRect(p.x-22,p.y-24,44,46,12);g.fillCircle(p.x-16,p.y-24,10);g.fillCircle(p.x+16,p.y-24,10);g.fillStyle(0xffd491);g.fillCircle(p.x-8,p.y-10,3);g.fillCircle(p.x+8,p.y-10,3);}g.fillStyle(0x89cca0);g.fillRect(p.x-22,p.y-40,44*p.hp/SKILLS.flame.pet.hp,4);}
+      if(a.pet){const p=a.pet;if(!this.visuals?.draw(p,`pet.${member.profile.kit}`,p)){g.fillStyle(0xa47258);g.fillRoundedRect(p.x-22,p.y-24,44,46,12);g.fillCircle(p.x-16,p.y-24,10);g.fillCircle(p.x+16,p.y-24,10);g.fillStyle(0xffd491);g.fillCircle(p.x-8,p.y-10,3);g.fillCircle(p.x+8,p.y-10,3);}g.fillStyle(0x89cca0);g.fillRect(p.x-22,p.y-40,44*Math.max(0,Math.min(1,p.hp/p.maxHp)),4);}
       if(a.aura&&!this.visuals?.draw(a,`aura.${member.profile.kit}`,member.hero)){g.lineStyle(2,0x88b99d,.6);g.strokeCircle(member.hero.x,member.hero.y,SKILLS.curse.aura.range);}
 
       for (const p of member.projectiles) { if(this.visuals?.draw(p,`projectile.${member.profile.id}.basic`,p,'walk',Math.atan2(p.target.y-p.y,p.target.x-p.x)))continue;g.fillStyle(member.profile.color); g.fillCircle(p.x,p.y,5); }
