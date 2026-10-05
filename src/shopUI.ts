@@ -48,7 +48,7 @@ export function setupShop(scene:ArenaScene){
       if(item==='weapon'){const t=Math.min(3,e.weapon+1),magic=['flame','curse'].includes(c.profile.kit);label=`무기 T${e.weapon} → T${t} · ${magic?'주문력':'공격력'} +${(magic?EQUIPMENT.magical:EQUIPMENT.physical)[t]}`;}
       else if(item==='armor'){const t=Math.min(3,e.armor+1);label=`방어구 T${e.armor} → T${t} · 체력 +${EQUIPMENT.health[t]}, 양방어 +${EQUIPMENT.defense[t]}`;}
       else {const p=EQUIPMENT.potions[item];label=`${p.name} · ${p.hp?'체력 25% ':''}${p.mana?'마나 30%':''}`;}
-      b.querySelector('span')!.textContent=label;b.querySelector('small')!.textContent=reason||`${price} 골드`;
+      b.querySelector('span')!.textContent=label;b.querySelector('small')!.textContent=price===null?reason:`${price} 골드${reason?' · '+reason:''}`;
     }
   };
 }
