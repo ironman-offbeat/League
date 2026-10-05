@@ -67,3 +67,7 @@ icons:{'skill.fury.manual':'/assets/icons/dash.webp'},
 - 일시정지 중에는 애니메이션과 이펙트 수명도 멈춥니다. 재경기·모드 변경 시 남은 sprite와 이펙트를 정리합니다.
 - 텍스처 미등록·로딩 실패·잘못된 시작 프레임은 기존 도형으로 대체합니다. 잘못된 애니메이션 프레임은 재생하지 않고 정적 이미지를 유지합니다.
 - 아트 작업 시 투명 배경, 기준점, 프레임 이름, 방향, FPS, 반복 여부, 사용 권한을 함께 정합니다. 실제 리소스를 연결한 뒤 저사양 실기기에서 텍스처 용량과 렌더링 부하를 검증합니다.
+
+## Item UI keys
+
+Shop icons optionally use `ASSETS.icons` keys `item.weapon`, `item.armor`, `item.health`, `item.mana`, `item.mixed`. Missing images retain text labels. Item icons are presentation-only; tiers, price and effects live in `src/game/equipment.ts` and skill rank values in `src/game/skillRanks.ts`.

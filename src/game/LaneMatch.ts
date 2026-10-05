@@ -8,6 +8,8 @@ import { damageTarget } from './targets.ts';
 import type { Target } from './targets.ts';
 import type { Pet } from './Abilities.ts';
 import { PROGRESSION, TeamEconomy } from './progression.ts';
+import { EQUIPMENT } from './equipment.ts';
+import type { Purchase } from './equipment.ts';
 
 // Compact first-match map. These are playtest values, not final ranked balance.
 export const LANE = {
@@ -47,10 +49,33 @@ export class LaneMatch extends Squad {
     this.members=CHAMPIONS.map((profile,i)=>{
       const c=new Combat({...profile,spawn:{...LANE.spawns[i]}},this.enemies);
       c.progression.enabled=true;
+      c.initializeEquipment();
       c.autoTargetAllowed=target=>target.kind!=='building'||this.supported(target,'blue');
       return c;
     });
     this.updateProtection();
+  }
+  shopReason(c:Combat,item:Purchase){
+    if(this.result||!this.members.includes(c))return '경기 종료';
+    if(c.alive&&distance(c.hero,c.profile.spawn)>=EQUIPMENT.fountainRadius)return '우물에서만 구매 가능';
+    const price=c.equipment.price(item);
+    if(price===null)return '최대 단계';
+    if(item!=='weapon'&&item!=='armor'){
+      if(c.equipment.potion)return '포션 슬롯이 가득 참';
+      if(c.maxMana===0&&item!=='health')return '분노 챔피언은 구매 불가';
+    }
+    if(this.economy.blue.gold+1e-8<price)return '팀 골드 부족';
+    return '';
+  }
+  purchase(c:Combat,item:Purchase){
+    if(this.shopReason(c,item))return false;
+    const price=c.equipment.price(item);if(price===null||!this.economy.blue.spend(price))return false;
+    if(item==='weapon')c.equipment.weapon++;
+    else if(item==='armor'){
+      const before=EQUIPMENT.health[c.equipment.armor];c.equipment.armor++;
+      const delta=EQUIPMENT.health[c.equipment.armor]-before;c.hero.maxHp+=delta;if(c.alive)c.hero.hp+=delta;
+    }else c.equipment.potion=item;
+    return true;
   }
   private createUnit(team:Team,role:LaneUnit['role'],x:number,y:number):LaneUnit {
     const stats=LANE[role];

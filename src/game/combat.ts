@@ -1,3 +1,5 @@
+import { Equipment, EQUIPMENT } from './equipment.ts';
+import { skillRanks, rankedFury } from './skillRanks.ts';
 import { damageTarget, skillTarget } from './targets.ts';
 import type { Target, HitKind } from './targets.ts';
 import { Abilities } from './Abilities.ts';
@@ -20,10 +22,22 @@ export type PendingAttack = { targetId: string; remaining: number; empowered: bo
 export class Combat {
   profile: Champion;
   progression=new Progression();
-  get stats(){const n=this.progression.level-1;return {...this.profile.stats,hp:this.profile.stats.hp+this.profile.growth.hp*n,attack:this.profile.stats.attack+this.profile.growth.attack*n,attackInterval:this.profile.stats.attackInterval/(1+n*PROGRESSION.attackSpeedPerLevel)};}
+  equipment=new Equipment();
+  get ranks(){return skillRanks(this.profile.kit,this.progression.level,this.progression.enabled);}
+  get furySkills(){return rankedFury(this.ranks,this.stats.attack);}
+  get abilityPower(){return ['flame','curse'].includes(this.profile.kit)?EQUIPMENT.magical[this.equipment.weapon]:0;}
+  get weaponAttack(){return ['fury','frost'].includes(this.profile.kit)?EQUIPMENT.physical[this.equipment.weapon]:0;}
+  initializeEquipment(){this.equipment.initialize();this.hero.maxHp+=EQUIPMENT.health[1];this.hero.hp+=EQUIPMENT.health[1];}
+  usePotion(){
+    const e=this.equipment;if(!this.canAct||!e.potion||e.active)return false;
+    const p=EQUIPMENT.potions[e.potion];
+    if(!(p.hp&&this.hero.hp<this.hero.maxHp)&&!(p.mana&&this.hero.mana<this.maxMana))return false;
+    e.active={remaining:EQUIPMENT.duration,hpPerSecond:this.hero.maxHp*p.hp/EQUIPMENT.duration,manaPerSecond:this.maxMana*p.mana/EQUIPMENT.duration,healed:0};e.potion=null;return true;
+  }
+  get stats(){const n=this.progression.level-1;return {...this.profile.stats,hp:this.profile.stats.hp+this.profile.growth.hp*n+EQUIPMENT.health[this.equipment.armor],attack:this.profile.stats.attack+this.profile.growth.attack*n+this.weaponAttack,attackInterval:this.profile.stats.attackInterval/(1+n*PROGRESSION.attackSpeedPerLevel)};}
   get maxMana(){return this.profile.mana+this.profile.growth.mana*(this.progression.level-1);}
-  get armor(){return this.profile.armor+this.profile.growth.armor*(this.progression.level-1);}
-  get magicResist(){return this.profile.magicResist+this.profile.growth.magicResist*(this.progression.level-1);}
+  get armor(){return this.profile.armor+this.profile.growth.armor*(this.progression.level-1)+EQUIPMENT.defense[this.equipment.armor];}
+  get magicResist(){return this.profile.magicResist+this.profile.growth.magicResist*(this.progression.level-1)+EQUIPMENT.defense[this.equipment.armor];}
   gainExperience(amount:number){
     const gained=this.progression.gain(amount);if(!gained)return;
     const health=this.profile.growth.hp*gained,mana=this.profile.growth.mana*gained;
@@ -58,7 +72,8 @@ export class Combat {
     if(lost>0)this.events.push({kind:'damage',point:{x:this.hero.x,y:this.hero.y-45},amount:lost,source:'반격',entityId:this.profile.id,visual:'hit.physical'});
     if(!this.alive){
       this.respawnRemaining=this.progression.enabled?PROGRESSION.respawnBase+this.progression.level*PROGRESSION.respawnPerLevel+(this.elapsed>=PROGRESSION.lateRespawnAt?PROGRESSION.lateRespawnBonus:0):SKILLS.respawn;this.command={kind:'idle'};this.pending=null;this.dash=null;
-      if(this.ultimateRemaining>0)this.hero.maxHp-=RULES.ultimate.health;
+      if(this.ultimateRemaining>0)this.hero.maxHp-=this.ultimateHealth;
+      this.ultimateHealth=0;this.equipment.active=null;
       this.ultimateRemaining=0;this.hero.shield=0;this.hero.shieldRemaining=0;this.hero.fury=0;
       this.abilities.reset();Object.assign(this.hero,freshStatus());
     }else this.abilities.onDamage();
@@ -81,6 +96,8 @@ export class Combat {
   pending: PendingAttack | null = null;
   dash: { destination: Point; hit: Set<string> } | null = null;
   ultimateRemaining = 0;
+  ultimateHealth=0;
+  ultimateDamage=0;
   events: GameEvent[] = [];
   damage = 0;
   elapsed = 0;
@@ -109,7 +126,7 @@ export class Combat {
     return true;
   }
   castDash(point: Point) {
-    if (!this.canAct || this.hero.rooted>0 || this.profile.kit !== 'fury' || this.cooldown.dash > 0 || this.dash) return false;
+    if (!this.canAct || this.hero.rooted>0 || this.profile.kit !== 'fury' || !this.ranks.E || this.cooldown.dash > 0 || this.dash) return false;
     const d = distance(this.hero, point);
     if (d < 5) return false;
     const length = Math.min(d, RULES.dash.range);
@@ -119,7 +136,7 @@ export class Combat {
     this.anchor = { ...destination };
     this.command = { kind: 'idle' };
     this.pending = null;
-    this.cooldown.dash = RULES.dash.cooldown;
+    this.cooldown.dash = this.furySkills.dash.cooldown;
     this.completed.dash = true;
     this.events.push({ kind: 'dash', point: { ...this.hero } });
     return true;
@@ -127,10 +144,11 @@ export class Combat {
   castUltimate() {
     if (!this.canAct || this.profile.kit !== 'fury' || this.cooldown.ultimate > 0 || !this.progression.ultimateUnlocked) return false;
     this.cancelRecall();
-    this.hero.maxHp += RULES.ultimate.health;
-    this.hero.hp += RULES.ultimate.health;
+    this.ultimateHealth=this.furySkills.ultimate.health;this.ultimateDamage=this.furySkills.ultimate.damage;
+    this.hero.maxHp += this.ultimateHealth;
+    this.hero.hp += this.ultimateHealth;
     this.ultimateRemaining = RULES.ultimate.duration;
-    this.cooldown.ultimate = RULES.ultimate.cooldown;
+    this.cooldown.ultimate = this.furySkills.ultimate.cooldown;
     this.events.push({ kind: 'ultimate', point: { ...this.hero } });
     return true;
   }
@@ -177,20 +195,22 @@ export class Combat {
     }
   }
   private stepVitals(dt:number){
+    const potion=this.equipment.active;
+    if(potion){const tick=Math.min(dt,potion.remaining),before=this.hero.hp;this.hero.hp=Math.min(this.hero.maxHp,this.hero.hp+potion.hpPerSecond*tick);this.hero.mana=Math.min(this.maxMana,this.hero.mana+potion.manaPerSecond*tick);potion.remaining-=tick;potion.healed+=this.hero.hp-before;if(potion.remaining<=1e-8){if(potion.healed>0)this.events.push({kind:'heal',point:{...this.hero},amount:potion.healed});this.equipment.active=null;}}
     this.hero.mana = Math.min(this.maxMana, this.hero.mana + this.maxMana * .008 * dt);
     this.hero.hp = Math.min(this.hero.maxHp, this.hero.hp + this.hero.maxHp * 0.003 * dt);
     if (this.elapsed - this.lastCombat > 6) this.hero.fury = Math.max(0, this.hero.fury - 10 * dt);
     if (this.ultimateRemaining > 0) {
       this.ultimateRemaining = Math.max(0, this.ultimateRemaining - dt);
-      for (const enemy of this.enemies) if (enemy.alive && distance(this.hero, enemy) <= RULES.ultimate.range) this.hurt(enemy, RULES.ultimate.damage * dt, 'R', false, 'magic');
-      if (!this.ultimateRemaining) { this.hero.maxHp -= RULES.ultimate.health; this.hero.hp = Math.min(this.hero.hp, this.hero.maxHp); }
+      for (const enemy of this.enemies) if (enemy.alive && distance(this.hero, enemy) <= RULES.ultimate.range) this.hurt(enemy, this.ultimateDamage * dt, 'R', false, 'magic');
+      if (!this.ultimateRemaining) { this.hero.maxHp -= this.ultimateHealth; this.ultimateHealth=0; this.hero.hp = Math.min(this.hero.hp, this.hero.maxHp); }
     }
   }
   private stepActor(dt: number) {
     if (this.dash) {
       this.travel(this.dash.destination, RULES.dash.speed * dt,true);
       for (const enemy of this.enemies) if (enemy.alive && !this.dash.hit.has(enemy.id) && distance(this.hero, enemy) < 48) {
-        this.dash.hit.add(enemy.id); this.hurt(enemy, RULES.dash.damage+(this.stats.attack-this.profile.stats.attack)*RULES.dash.attackRatio, 'E');
+        this.dash.hit.add(enemy.id); this.hurt(enemy, this.furySkills.dash.damage, 'E');
       }
       if (distance(this.hero, this.dash.destination) < 0.1) this.dash = null;
       return;
@@ -250,9 +270,9 @@ export class Combat {
         if (p.useW) {
           if (p.empowered) this.hero.fury -= 50;
           this.cooldown.w = RULES.w.cooldown;
-          target.stunned = Math.max(target.stunned,RULES.w.stun + (p.empowered ? 0.4 : 0));
+          target.stunned = Math.max(target.stunned,this.furySkills.w.stun + (p.empowered ? 0.4 : 0));
         }
-        this.basicHit(target, this.stats.attack + (p.useW ? (RULES.w.bonus+(this.stats.attack-this.profile.stats.attack)*RULES.w.attackRatio) * (p.empowered ? 1.5 : 1) : 0), p.useW ? 'W' : '기본 공격');
+        this.basicHit(target, this.stats.attack + (p.useW ? this.furySkills.w.bonus * (p.empowered ? 1.5 : 1) : 0), p.useW ? 'W' : '기본 공격');
         if (this.profile.kit === 'fury') this.hero.fury = Math.min(100, this.hero.fury + 10);
         this.completed.attack = true;
         this.pending = null;
@@ -261,14 +281,14 @@ export class Combat {
     }
     if(this.abilities.auto(target))return;
     const nearby = this.enemies.filter(e => e.alive && skillTarget(e) && this.canSee(e) && distance(this.hero,e) <= RULES.q.range);
-    const canW = skillTarget(target) && this.profile.kit === 'fury' && this.cooldown.w <= 0 && distance(this.hero,target) <= this.stats.range + .001;
-    if (this.profile.kit === 'fury' && this.cooldown.q <= 0 && nearby.length && (this.hero.hp / this.hero.maxHp <= 0.5 || !canW)) {
+    const canW = skillTarget(target) && this.profile.kit === 'fury' && this.ranks.W>0 && this.cooldown.w <= 0 && distance(this.hero,target) <= this.stats.range + .001;
+    if (this.profile.kit === 'fury' && this.ranks.Q>0 && this.cooldown.q <= 0 && nearby.length && (this.hero.hp / this.hero.maxHp <= 0.5 || !canW)) {
       const empowered = this.hero.fury >= 50;
       if (empowered) this.hero.fury -= 50;
       else this.hero.fury = Math.min(100, this.hero.fury + Math.min(15, nearby.length * 5));
-      for (const enemy of nearby) this.hurt(enemy, (RULES.q.damage+(this.stats.attack-this.profile.stats.attack)*RULES.q.attackRatio) * (empowered ? 1.5 : 1), 'Q');
+      for (const enemy of nearby) this.hurt(enemy, this.furySkills.q.damage * (empowered ? 1.5 : 1), 'Q');
       const before = this.hero.hp;
-      this.hero.hp = Math.min(this.hero.maxHp, this.hero.hp + Math.min(100, nearby.reduce((sum,e)=>sum+(e.kind==='minion'?8:RULES.q.heal),0)) * (empowered ? 2 : 1));
+      this.hero.hp = Math.min(this.hero.maxHp, this.hero.hp + Math.min(this.furySkills.q.healCap, nearby.reduce((sum,e)=>sum+(e.kind==='minion'?this.furySkills.q.minionHeal:this.furySkills.q.heal),0)) * (empowered ? 2 : 1));
       if (this.hero.hp > before) this.events.push({ kind: 'heal', point: { ...this.hero }, amount: this.hero.hp-before });
       this.events.push({ kind: 'slash', point: { ...this.hero } });
       this.cooldown.q = RULES.q.cooldown;
@@ -278,7 +298,7 @@ export class Combat {
       this.travel(target, Math.min(this.stats.speed * dt, distance(this.hero,target)-this.stats.range));
     } else if (this.cooldown.attack <= 0) {
       this.pending = { targetId: target.id, remaining: this.stats.windup, empowered: this.hero.fury >= 50, useW: canW };
-      this.cooldown.attack = this.stats.attackInterval / (this.abilities.haste>0?1+SKILLS.frost.q.haste:1);
+      this.cooldown.attack = this.stats.attackInterval / (this.abilities.haste>0?1+this.abilities.hasteBonus:1);
     }
   }
   private routeTarget(){
