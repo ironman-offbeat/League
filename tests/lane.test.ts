@@ -67,8 +67,8 @@ test('lane recall and respawn return to match spawn, and wave clocks do not mult
 test('long unattended match keeps waves bounded and minions fight opposing structures',()=>{
  const m=new LaneMatch();step(m,360);assert.ok(m.units.length<100);assert.ok(m.structure('red','tower').hp<m.structure('red','tower').maxHp||m.structure('blue','tower').hp<m.structure('blue','tower').maxHp);
 });
-test('ordinary four-hero orders can finish a fresh match through tower then nexus',()=>{
- const m=new LaneMatch();
+test('isolated siege fixture finishes through tower then nexus without champion opposition',()=>{
+ const m=new LaneMatch({enemyChampions:false});
  for(let tick=0;tick<60*180&&!m.result;tick++){
   if(tick%120===0){const target=m.structure('red','tower').alive?m.structure('red','tower'):m.structure('red','nexus');for(const c of m.members)if(c.alive)c.attack(target.id);}
   m.step(RULES.step);

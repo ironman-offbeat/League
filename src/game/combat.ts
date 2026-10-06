@@ -20,6 +20,9 @@ export type GameEvent = { kind: 'damage' | 'heal' | 'slash' | 'dash' | 'ultimate
 export type PendingAttack = { targetId: string; remaining: number; empowered: boolean; useW: boolean };
 
 export class Combat {
+  onDeath?:()=>void;
+  // Entity IDs distinguish teams; art keys continue to identify the original champion.
+  visualId:string;
   profile: Champion;
   progression=new Progression();
   equipment=new Equipment();
@@ -63,25 +66,27 @@ export class Combat {
     if(kind!=='rooted')this.pending=null;
     if(this.dash||this.abilities.pull){this.dash=null;this.abilities.pull=null;this.anchor={x:this.hero.x,y:this.hero.y};this.command={kind:'idle'};}
   }
-  receiveDamage(raw:number,type:DamageType='physical'){
+  receiveDamage(raw:number,type:DamageType='physical',show=true){
     if(!this.alive)return 0;
     this.cancelRecall();this.lastCombat=this.elapsed;
     const damage=mitigate(raw,type==='physical'?this.armor:this.magicResist);
     const absorbed=Math.min(this.hero.shield,damage);this.hero.shield-=absorbed;
     const lost=Math.min(this.hero.hp,damage-absorbed);this.hero.hp-=lost;
-    if(lost>0)this.events.push({kind:'damage',point:{x:this.hero.x,y:this.hero.y-45},amount:lost,source:'반격',entityId:this.profile.id,visual:'hit.physical'});
+    if(lost>0&&show)this.events.push({kind:'damage',point:{x:this.hero.x,y:this.hero.y-45},amount:lost,source:'피격',entityId:this.profile.id,visual:`hit.${type}`});
     if(!this.alive){
       this.respawnRemaining=this.progression.enabled?PROGRESSION.respawnBase+this.progression.level*PROGRESSION.respawnPerLevel+(this.elapsed>=PROGRESSION.lateRespawnAt?PROGRESSION.lateRespawnBonus:0):SKILLS.respawn;this.command={kind:'idle'};this.pending=null;this.dash=null;
       if(this.ultimateRemaining>0)this.hero.maxHp-=this.ultimateHealth;
       this.ultimateHealth=0;this.equipment.active=null;
       this.ultimateRemaining=0;this.hero.shield=0;this.hero.shieldRemaining=0;this.hero.fury=0;
       this.abilities.reset();Object.assign(this.hero,freshStatus());
+      this.onDeath?.();
     }else this.abilities.onDamage();
     return lost;
   }
   projectiles: { x: number; y: number; target: Dummy; generation: number; damage: number }[] = [];
   constructor(profile: Champion = CHAMPIONS[0], enemies?: Dummy[]) {
     this.profile = profile;
+    this.visualId = profile.id;
     this.hero = { ...profile.spawn, hp: profile.stats.hp, maxHp: profile.stats.hp, fury: 0, mana: profile.mana, facing: 0, shield:0, shieldRemaining:0, ...freshStatus() };
     this.anchor = { ...profile.spawn };
     if (enemies) this.enemies = enemies;
@@ -124,6 +129,11 @@ export class Combat {
     this.lastSeen = { x: target.x, y: target.y };
     this.pending = null;
     return true;
+  }
+  attackMove(point:Point){
+    if(!this.canAct||this.dash||this.abilities.pull||this.hero.rooted>0)return false;
+    this.anchor=clampPoint(point);this.command={kind:'attackMove',point:{...this.anchor}};
+    this.pending=null;return true;
   }
   castDash(point: Point) {
     if (!this.canAct || this.hero.rooted>0 || this.profile.kit !== 'fury' || !this.ranks.E || this.cooldown.dash > 0 || this.dash) return false;
@@ -184,6 +194,7 @@ export class Combat {
   }
   static stepEnemies(enemies: Dummy[], dt: number) {
     for (const enemy of enemies) {
+      if(enemy.receiveDamage)continue;
       tickStatus(enemy,dt);
       enemy.revealed=Math.max(0,enemy.revealed-dt);
       enemy.alert=Math.max(0,enemy.alert-dt);
@@ -329,12 +340,12 @@ export class Combat {
     this.hero.y += (point.y-this.hero.y)*scale;
   }
   hurt(target: Dummy, raw: number, source: string, show = true, type:DamageType='physical', kind:HitKind='skill') {
-    if(!target.alive)return;
-    const amount=damageTarget(target,raw*(type==='magic'&&target.marked>0?1+SKILLS.curse.passive.amplify:1),type,kind);
+    if(!target.alive||target.protected||(target.kind==='building'&&kind!=='basic'))return;
+    if(raw>0){target.alert=SKILLS.retaliation.alert;target.aggro=this.profile.id;this.lastCombat=this.elapsed;}
+    const amount=damageTarget(target,raw*(type==='magic'&&target.marked>0?1+SKILLS.curse.passive.amplify:1),type,kind,show);
     if(!amount)return;
-    target.alert=SKILLS.retaliation.alert;target.aggro=this.profile.id;
     this.damage += amount; this.lastCombat = this.elapsed;
-    if (show) this.events.push({ kind: 'damage', point: { x: target.x, y: target.y-40 }, amount, source, visual:`hit.${type}` });
+    if (show&&!target.receiveDamage) this.events.push({ kind: 'damage', point: { x: target.x, y: target.y-40 }, amount, source, visual:`hit.${type}` });
 
   }
 }

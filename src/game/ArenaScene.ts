@@ -11,6 +11,7 @@ import type { Point } from './config.ts';
 export class ArenaScene extends Phaser.Scene {
   squad:Squad = new Squad(true);
   get match(){return this.squad instanceof LaneMatch?this.squad:null;}
+  get champions(){return this.match?.actors??this.squad.members;}
   get blocked(){return this.paused||!!this.match?.result;}
   private visuals?:VisualDirector;
   private lastPositions=new Map<string,Point>();
@@ -80,7 +81,7 @@ export class ArenaScene extends Phaser.Scene {
     this.labels.forEach(label=>label.destroy());
     this.labels=this.combat.enemies.map(()=>this.add.text(0,0,'',{fontFamily:'Malgun Gothic, sans-serif',fontSize:'11px',color:'#e4ddbd',backgroundColor:'#18241dc0',padding:{x:5,y:3}}).setOrigin(.5).setDepth(7));
     this.drawMap();this.centerHero();
-    this.notify(lane?'10초 후 미니언 출발 · 전선 집결로 함께 전진하세요.':'연습장을 초기화했습니다.');
+    this.notify(lane?'적 챔피언 4명과 교전합니다 · 미니언과 함께 전진하세요.':'연습장을 초기화했습니다.');
   }
   restartTraining(){this.startMode(!!this.match);}
   rally(){
@@ -120,8 +121,8 @@ export class ArenaScene extends Phaser.Scene {
     this.visuals?.setPaused(this.blocked);this.visuals?.begin();
     this.renderActors();
     this.renderGuide();
-    for(const event of this.squad.members.flatMap(c => c.events.splice(0))) {
-      if(event.entityId&&(event.kind==='cast'||event.kind==='damage'))this.poses.set(event.entityId,{kind:event.kind==='cast'?'cast':'hurt',until:this.combat.elapsed+(this.visuals?.clipDuration(actorVisual(event.entityId),event.kind==='cast'?'cast':'hurt')??.3)});
+    for(const event of this.champions.flatMap(c => c.events.splice(0))) {
+      if(event.entityId&&(event.kind==='cast'||event.kind==='damage'))this.poses.set(event.entityId,{kind:event.kind==='cast'?'cast':'hurt',until:this.combat.elapsed+(this.visuals?.clipDuration(actorVisual(this.champions.find(c=>c.profile.id===event.entityId)?.visualId??event.entityId),event.kind==='cast'?'cast':'hurt')??.3)});
       const custom=event.visual?this.visuals?.effect(event.visual,event.point):false;
       if(event.kind==='levelUp'){
         const label=this.add.text(event.point.x,event.point.y-65,`Lv. ${event.amount}`,{fontSize:'20px',color:'#a0e7ff',stroke:'#122d35',strokeThickness:3}).setOrigin(.5).setDepth(10);
@@ -159,22 +160,25 @@ export class ArenaScene extends Phaser.Scene {
       const p=attack.pet??attack.actor.hero;
       g.lineStyle(2,0xef856b,.65);g.lineBetween(attack.enemy.x,attack.enemy.y,p.x,p.y);g.strokeCircle(p.x,p.y,29);
     }
-    for (const member of this.squad.members) {
+    for (const member of this.champions) {
       const a=member.abilities;
       for(const m of a.missiles){if(this.visuals?.draw(m,`projectile.${member.profile.kit}.${m.kind}`,m.point,'walk',Math.atan2(m.direction.y,m.direction.x)))continue;g.fillStyle(member.profile.color);g.fillCircle(m.point.x,m.point.y,m.kind==='arrow'?10:6);}
       if(a.scout&&!this.visuals?.draw(a.scout,'zone.scout',a.scout)){g.lineStyle(2,0x86c9ec,.6);g.strokeCircle(a.scout.x,a.scout.y,SKILLS.frost.scout.radius);}
       if(a.pet){const p=a.pet;if(!this.visuals?.draw(p,`pet.${member.profile.kit}`,p)){g.fillStyle(0xa47258);g.fillRoundedRect(p.x-22,p.y-24,44,46,12);g.fillCircle(p.x-16,p.y-24,10);g.fillCircle(p.x+16,p.y-24,10);g.fillStyle(0xffd491);g.fillCircle(p.x-8,p.y-10,3);g.fillCircle(p.x+8,p.y-10,3);}g.fillStyle(0x89cca0);g.fillRect(p.x-22,p.y-40,44*Math.max(0,Math.min(1,p.hp/p.maxHp)),4);}
       if(a.aura&&!this.visuals?.draw(a,`aura.${member.profile.kit}`,member.hero)){g.lineStyle(2,0x88b99d,.6);g.strokeCircle(member.hero.x,member.hero.y,SKILLS.curse.aura.range);}
 
-      for (const p of member.projectiles) { if(this.visuals?.draw(p,`projectile.${member.profile.id}.basic`,p,'walk',Math.atan2(p.target.y-p.y,p.target.x-p.x)))continue;g.fillStyle(member.profile.color); g.fillCircle(p.x,p.y,5); }
+      for (const p of member.projectiles) { if(this.visuals?.draw(p,`projectile.${member.visualId}.basic`,p,'walk',Math.atan2(p.target.y-p.y,p.target.x-p.x)))continue;g.fillStyle(member.profile.color); g.fillCircle(p.x,p.y,5); }
     }
-    for (const c of this.squad.members) {
+    for (const c of this.champions) {
+    const enemy=this.match?.opponents.includes(c)??false;
     const h=c.hero,last=this.lastPositions.get(c.profile.id),pose=this.poses.get(c.profile.id);
     const activePose=pose&&pose.until>c.elapsed?pose.kind:null;
     const motion=motionFor({alive:c.alive,moving:!!last&&distance(h,last)>.01,attacking:!!c.pending,casting:activePose==='cast',hurt:activePose==='hurt',recalling:c.command.kind==='recall'});
     this.lastPositions.set(c.profile.id,{x:h.x,y:h.y});
-    const custom=this.visuals?.draw(c,actorVisual(c.profile.id),h,motion,h.facing);
+    const custom=this.visuals?.draw(c,actorVisual(c.visualId),h,motion,h.facing);
     if(!c.alive){if(custom)continue;g.lineStyle(2,0x8c8a83,.6);g.strokeCircle(h.x,h.y,23);continue;}
+    if(enemy){g.lineStyle(3,0xed806e,.9);g.strokeEllipse(h.x,h.y+7,64,48);}
+    if(this.combat.command.kind==='attack'&&this.combat.command.targetId===c.profile.id){g.lineStyle(2,0xffdf9c);g.strokeCircle(h.x,h.y,37);}
     if(h.shield>0){g.lineStyle(3,0x88cbed,.8);g.strokeCircle(h.x,h.y,34);}
     g.fillStyle(0x0b1915,.6);g.fillEllipse(h.x+4,h.y+24,63,26);
     if(c.ultimateRemaining>0){g.fillStyle(0xdaa549,.09);g.fillCircle(h.x,h.y,RULES.ultimate.range);g.lineStyle(1,0xdaba64,.45);g.strokeCircle(h.x,h.y,49);}
@@ -195,7 +199,7 @@ export class ArenaScene extends Phaser.Scene {
     if(c.pending){g.lineStyle(3,0xf1d28b,.8);g.beginPath();g.arc(0,0,49,-.7,.7);g.strokePath();}
     g.restore();
     }
-    g.fillStyle(0x10251e);g.fillRect(h.x-29,h.y-43,58,6);g.fillStyle(0x89cca0);g.fillRect(h.x-28,h.y-42,56*h.hp/h.maxHp,4);
+    g.fillStyle(0x10251e);g.fillRect(h.x-29,h.y-43,58,6);g.fillStyle(enemy?0xed806e:0x89cca0);g.fillRect(h.x-28,h.y-42,56*h.hp/h.maxHp,4);
     if(c.command.kind==='recall'){g.lineStyle(3,0x83ced2,.8);g.strokeCircle(h.x,h.y,42+Math.sin(c.elapsed*6)*4);}
     }
   }
@@ -224,8 +228,12 @@ export class ArenaScene extends Phaser.Scene {
       }
       if(this.combat.command.kind==='attack'&&this.combat.command.targetId===u.id&&u.alive){g.lineStyle(2,0xffdf9c);g.strokeCircle(u.x,u.y,u.kind==='building'?46:23);}
     }
-    match.enemies.filter(u=>u.kind==='building').forEach((u,i)=>{this.labels[i].setPosition(u.x,u.y-78).setText(`${u.role==='tower'?'적 타워':'적 넥서스'} · ${!u.alive?'파괴됨':u.protected?'타워 보호':u.damageScale===.25?'공성 피해 25%':Math.ceil(u.hp)}`);});
-    const liveIds=new Set([...match.units.map(u=>u.id),...match.members.map(c=>c.profile.id)]);
+    match.units.filter(u=>u.team==='red'&&u.kind==='building').forEach((u,i)=>{this.labels[i].setPosition(u.x,u.y-78).setText(`${u.role==='tower'?'적 타워':'적 넥서스'} · ${!u.alive?'파괴됨':u.protected?'타워 보호':u.damageScale===.25?'공성 피해 25%':Math.ceil(u.hp)}`);});
+    match.opponents.forEach((c,i)=>{
+      const label=this.labels[i+2],h=c.hero;
+      label.setPosition(h.x,h.y-64).setText(c.alive?`적 ${c.profile.name} · Lv.${c.progression.level}${h.stunned>0?' · 기절':h.rooted>0?' · 속박':h.slowRemaining>0?' · 둔화':''}`:`${c.profile.name} · 부활 ${Math.ceil(c.respawnRemaining)}초`);
+    });
+    const liveIds=new Set([...match.units.map(u=>u.id),...match.actors.map(c=>c.profile.id)]);
     for(const id of this.lastPositions.keys())if(!liveIds.has(id))this.lastPositions.delete(id);
     for(const shot of match.towerShots.values()){g.lineStyle(3,0xef9273,.8);g.lineBetween(shot.tower.x,shot.tower.y,shot.target.point.x,shot.target.point.y);g.strokeCircle(shot.target.point.x,shot.target.point.y,25);}
   }

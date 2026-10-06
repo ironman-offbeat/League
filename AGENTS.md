@@ -1,7 +1,7 @@
 # League development rules
 
 - User directs game design and performs acceptance QA; do implementation autonomously within approved scope.
-- Current scope is a four-champion training arena and compact one-lane siege prototype. Lane progression, shared gold, T1–T3 gear, one potion slot and fixed-order Q/W/E/R ranks are implemented. Enemy champions and the full map remain future work. Do not claim this is a complete MOBA.
+- Current scope is a four-champion training arena and compact one-lane siege prototype. Lane progression, shared gold, T1–T3 gear, one potion slot and fixed-order Q/W/E/R ranks are implemented. Enemy champions use the same Combat implementation with deterministic lane AI. The full map, fog/bush integration and jungle remain future work. Do not claim this is a complete MOBA.
 - Canonical design is docs/DESIGN.md. New numeric values are provisional balance settings, not proven values.
 - Keep simulation independent of Phaser rendering. Commands share one rules path; data belongs in config.
 - Explicit move overrides attack and cancels windup without resetting attack cooldown.
@@ -18,3 +18,6 @@
 - Graphics use stable entity identity and shared data-driven visual keys. Preserve placeholder fallback, pause, despawn cleanup and mode-reset cleanup when adding assets.
 - Award death rewards once through the shared damage path. XP splits among nearby living, non-capped allies; team gold is paid once. Pure move still suppresses offensive auto combat.
 - Shop transactions share one simulation path and deduct team gold only after validation. Tier stats are totals, not stacked bonuses. Rank-zero skills cannot activate; training keeps rank-one kits. Never remove a newly upgraded amount when an older temporary HP buff expires.
+
+
+- Champion target adapters are live views: never duplicate health, tick their statuses twice, or respawn them through dummy timers. Entity IDs must be team-unique; visual IDs remain champion-specific. AI issues normal commands and shares normal shops, resources and cooldowns.
