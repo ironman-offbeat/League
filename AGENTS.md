@@ -1,7 +1,7 @@
 # League development rules
 
 - User directs game design and performs acceptance QA; do implementation autonomously within approved scope.
-- Current scope is a four-champion training arena and compact one-lane siege prototype. Lane progression, shared gold, T1–T3 gear, one potion slot, fixed-order Q/W/E/R ranks, symmetric enemy AI, shared vision and bush concealment are implemented. Three-lane navigation is being introduced behind the proven one-lane match; the full playable map and jungle remain future work. Do not claim this is a complete MOBA.
+- Current scope is a four-champion training arena and compact one-lane siege prototype. Lane progression, shared gold, T1–T3 gear, one potion slot, fixed-order Q/W/E/R ranks, symmetric enemy AI, shared vision and bush concealment are implemented. Three-lane navigation and a non-player-facing battlefield simulation foundation now live behind the proven one-lane match; champion integration, rendering, jungle camps and the full playable map remain future work. Do not claim this is a complete MOBA.
 - Canonical design is docs/DESIGN.md. New numeric values are provisional balance settings, not proven values.
 - Keep simulation independent of Phaser rendering. Commands share one rules path; data belongs in config.
 - Navigation is route/graph based. Do not encode lane behavior as raw x-axis progression or hard-code a champion to map coordinates. Preserve the prototype route until the full three-lane match is explicitly switched over.
