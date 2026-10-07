@@ -22,6 +22,7 @@ export class ArenaScene extends Phaser.Scene {
   private poses=new Map<string,{kind:'cast'|'hurt';until:number}>();
   get visualCounts(){return this.visuals?.counts??{sprites:0,effects:0};}
   private mapLayer?:Phaser.GameObjects.Container;
+  private battlefieldOverview=false;
   get combat() { return this.squad.selected; }
   selectChampion(index: number, center = true) {
     this.cancelGesture();
@@ -51,7 +52,7 @@ export class ArenaScene extends Phaser.Scene {
     this.labels = this.combat.enemies.map(() => this.add.text(0,0,'훈련 대상',{fontFamily:'Malgun Gothic, sans-serif',fontSize:'11px',color:'#d3bda7',backgroundColor:'#18241dc0',padding:{x:5,y:3}}).setOrigin(.5).setDepth(7));
     this.cameras.main.setBounds(0,0,RULES.world.width,RULES.world.height);
     this.centerHero();
-    this.scale.on('resize',this.centerHero,this);
+    this.scale.on('resize',this.handleResize,this);
     this.input.on('pointerdown',(p: Phaser.Input.Pointer) => {
       if (this.blocked || this.gesture) return;
       const world = this.cameras.main.getWorldPoint(p.x,p.y);
@@ -79,8 +80,25 @@ export class ArenaScene extends Phaser.Scene {
   }
   setPaused(value: boolean) { this.paused=value; this.visuals?.setPaused(this.blocked); this.accumulator=0; this.cancelGesture(); this.onFrame(this); }
   cancelGesture() { this.gesture=null; this.aimSlot=null; this.aim=null; }
-  centerHero() { this.cameras.main.centerOn(this.combat.hero.x+100,this.combat.hero.y-25); }
+  private handleResize(){
+    if(this.battlefieldMatch&&this.battlefieldOverview)this.centerBattlefieldOverview();
+    else this.centerHero();
+  }
+  centerHero() {
+    this.battlefieldOverview=false;
+    this.cameras.main.setZoom(1);
+    this.cameras.main.centerOn(this.combat.hero.x+100,this.combat.hero.y-25);
+  }
+  centerBattlefieldOverview(){
+    const camera=this.cameras.main;
+    this.battlefieldOverview=true;
+    const fit=Math.min(camera.width/RULES.world.width,camera.height/RULES.world.height)*.94;
+    camera.setZoom(Math.max(.32,Math.min(.8,fit)));
+    camera.centerOn(RULES.world.width/2,RULES.world.height/2);
+  }
   centerFront(){
+    this.battlefieldOverview=false;
+    this.cameras.main.setZoom(1);
     const battlefield=this.battlefieldMatch;
     if(battlefield){
       const role=BATTLEFIELD_ROLE_BY_CHAMPION[this.combat.visualId as keyof typeof BATTLEFIELD_ROLE_BY_CHAMPION];
@@ -98,7 +116,8 @@ export class ArenaScene extends Phaser.Scene {
     this.accumulator=0;this.cancelGesture();
     this.labels.forEach(label=>label.destroy());
     this.labels=this.combat.enemies.map(()=>this.add.text(0,0,'',{fontFamily:'Malgun Gothic, sans-serif',fontSize:'11px',color:'#e4ddbd',backgroundColor:'#18241dc0',padding:{x:5,y:3}}).setOrigin(.5).setDepth(7));
-    this.drawMap();this.centerHero();
+    this.drawMap();
+    if(this.battlefieldMatch)this.centerBattlefieldOverview();else this.centerHero();
     this.notify(match?'3라인 전장 · Top/Mid/Bottom 웨이브가 동시에 전진합니다.':'연습장을 초기화했습니다.');
   }
   restartTraining(){this.startMode(!!this.match);}
