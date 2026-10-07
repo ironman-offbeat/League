@@ -277,7 +277,9 @@ export class BattlefieldMatch extends Squad {
           const lateral=(index%3-1)*26;
           const travelled=Math.max(20,BATTLEFIELD.waveSpawnDistance-row*28);
           const point=this.lanePoint(team,lane,travelled,team==='blue'?lateral:-lateral);
-          this.units.push(this.createUnit(team,lane,role,point));
+          const unit=this.createUnit(team,lane,role,point);
+          this.units.push(unit);
+          (team==='red'?this.enemies:this.redTargets).push(unit);
         });
       }
     }
