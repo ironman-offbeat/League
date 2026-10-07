@@ -111,3 +111,24 @@ test('an untargeted area attack can hit a hidden enemy after a visible enemy cau
   blue.step(.1,false);
   assert.ok(hidden.hero.hp<hp);
 });
+
+
+test('summons obey bush concealment and reveal themselves when attacking without revealing their owner',()=>{
+  const match=new LaneMatch({ai:false});
+  const blue=match.members[0],red=match.opponents[1];
+  blue.hero.x=600;blue.hero.y=560;
+  red.hero.x=900;red.hero.y=560;
+  red.progression.gain(420);
+  red.hero.mana=red.maxMana;
+  assert.ok(red.castSkill('ultimate',{x:900,y:560}));
+  const pet=red.abilities.pet;assert.ok(pet);
+  pet.x=900;pet.y=560;
+  match.refreshVision();
+  assert.equal(match.canSeePet('blue',red),false);
+
+  red.summonOffensiveAction();
+  match.refreshVision();
+  assert.equal(match.canSeePet('blue',red),true);
+  const redTarget=target(match,red.profile.id);
+  assert.equal(match.canSee('blue',redTarget),false);
+});
