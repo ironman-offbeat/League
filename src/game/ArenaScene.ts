@@ -7,7 +7,7 @@ import { SKILLS } from './skillConfig.ts';
 import { Squad } from './Squad.ts';
 import { RULES, distance } from './config.ts';
 import type { Point } from './config.ts';
-import { MAP_LAYOUT, LANE_IDS, laneRoute } from './mapLayout.ts';
+import { MAP_LAYOUT, LANE_IDS, LANE_LABELS, laneRoute } from './mapLayout.ts';
 
 export class ArenaScene extends Phaser.Scene {
   squad:Squad = new Squad(true);
@@ -250,7 +250,7 @@ export class ArenaScene extends Phaser.Scene {
       if(this.combat.command.kind==='attack'&&this.combat.command.targetId===u.id&&u.alive){g.lineStyle(2,0xffdf9c);g.strokeCircle(u.x,u.y,u.kind==='building'?46:23);}
     }
     const redBuildings=match.units.filter(u=>u.team==='red'&&u.kind==='building');
-    redBuildings.forEach((u,i)=>{const visible=match.canSee('blue',u);this.labels[i].setVisible(visible);if(visible)this.labels[i].setPosition(u.x,u.y-78).setText(`${u.role==='tower'?`적 ${u.lane?.toUpperCase()} 타워`:'적 넥서스'} · ${!u.alive?'파괴됨':u.protected?'타워 보호':u.damageScale===.25?'공성 피해 25%':Math.ceil(u.hp)}`);});
+    redBuildings.forEach((u,i)=>{const visible=match.canSee('blue',u);this.labels[i].setVisible(visible);if(visible)this.labels[i].setPosition(u.x,u.y-78).setText(`${u.role==='tower'?`적 ${u.lane?LANE_LABELS[u.lane]:''} 타워`:'적 넥서스'} · ${!u.alive?'파괴됨':u.protected?'타워 보호':u.damageScale===.25?'공성 피해 25%':Math.ceil(u.hp)}`);});
     match.opponents.forEach((c,i)=>{
       const label=this.labels[i+redBuildings.length],h=c.hero,target=match.championTargets.find(t=>t.id===c.profile.id)!;
       const visible=match.canSee('blue',target);label.setVisible(visible);
