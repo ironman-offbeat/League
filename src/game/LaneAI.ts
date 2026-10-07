@@ -44,11 +44,12 @@ export class LaneAI {
       }
     }
     if(m.elapsed<AI_RULES.start){this.state='waiting';return;}
-    if(hiddenChase){this.state='fight';return;}
     const tower=m.structure(enemyTeam,'tower',lane);
     const safe=(p:Point)=>!tower.alive||m.supported(tower,team)||distance(p,tower)>LANE.tower.range+AI_RULES.towerMargin;
-    // Never continue a chase under an unescorted tower, even if a target has moved there.
+    // Tower safety outranks memory pursuit. A hidden target's last-seen position
+    // must never keep the AI fighting under an unescorted hostile tower.
     if(!safe(c.hero)){this.state='retreat';this.move(m.retreatPoint(team,lane,c.hero,LANE.tower.range+AI_RULES.towerMargin));return;}
+    if(hiddenChase){this.state='fight';return;}
     const hostileHeroes=visible.filter(t=>t.kind==='champion'&&distance(c.hero,t)<=AI_RULES.engage);
     const allies=m.teamMembers(team).filter(a=>a.alive&&distance(a.hero,c.hero)<=AI_RULES.engage);
     if(hostileHeroes.length>allies.length+1){this.state='retreat';this.move(m.retreatPoint(team,lane,c.hero,180));return;}
