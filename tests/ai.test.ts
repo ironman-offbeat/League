@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LaneMatch } from '../src/game/LaneMatch.ts';
+import { LaneMatch, LANE } from '../src/game/LaneMatch.ts';
 import { LaneAI } from '../src/game/LaneAI.ts';
 import { Combat } from '../src/game/combat.ts';
 import { CHAMPIONS } from '../src/game/champions.ts';
