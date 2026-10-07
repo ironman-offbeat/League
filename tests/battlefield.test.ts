@@ -7,6 +7,7 @@ import {
   BATTLEFIELD_ROLE_BY_CHAMPION,
   BattlefieldMatch,
   battlefieldChampionSpawn,
+  battlefieldFountain,
 } from '../src/game/BattlefieldMatch.ts';
 import type { BattlefieldTeam } from '../src/game/BattlefieldMatch.ts';
 import type { LaneId } from '../src/game/navigation.ts';
@@ -164,4 +165,63 @@ test('configured building values match the current full-map design targets',()=>
   assert.equal(BATTLEFIELD.structures.nexus.hp,5500);
   assert.equal(BATTLEFIELD.structures.outer.attack,150);
   assert.equal(BATTLEFIELD.structures.inner.attack,190);
+});
+
+
+test('battlefield champions use role starts while recall and respawn remain bound to team fountains',()=>{
+  const match=new BattlefieldMatch();
+  assert.equal(match.members.length,4);
+  assert.equal(match.opponents.length,4);
+  assert.deepEqual(match.members.map(actor=>actor.profile.id),['renekton','annie','ashe','amumu']);
+  assert.deepEqual(match.opponents.map(actor=>actor.profile.id),['red-renekton','red-annie','red-ashe','red-amumu']);
+  assert.deepEqual(match.opponents.map(actor=>actor.visualId),['renekton','annie','ashe','amumu']);
+
+  for(const actor of match.actors){
+    const team=match.teamOf(actor);
+    const original=actor.visualId as keyof typeof BATTLEFIELD_ROLE_BY_CHAMPION;
+    const start=battlefieldChampionSpawn(original,team);
+    const fountain=battlefieldFountain(team);
+    assert.deepEqual({x:actor.hero.x,y:actor.hero.y},start);
+    assert.deepEqual(actor.profile.spawn,fountain);
+    assert.deepEqual(actor.anchor,start);
+    assert.equal(actor.progression.enabled,true);
+    assert.equal(actor.equipment.weapon,1);
+    assert.equal(actor.equipment.armor,1);
+  }
+
+  const renekton=match.members[0];
+  assert.ok(renekton.recall());
+  step(match,4.1);
+  assert.deepEqual({x:renekton.hero.x,y:renekton.hero.y},battlefieldFountain('blue'));
+  assert.deepEqual(renekton.anchor,battlefieldFountain('blue'));
+});
+
+test('new battlefield waves join live champion target arrays and ordinary combat can damage them',()=>{
+  const match=new BattlefieldMatch();
+  const renekton=match.members[0];
+  const beforeTargets=renekton.enemies.length;
+  step(match,10);
+  assert.ok(renekton.enemies.length>beforeTargets);
+
+  const target=match.minions('red','top').find(unit=>unit.role==='melee')!;
+  renekton.hero.x=target.x-25;
+  renekton.hero.y=target.y;
+  renekton.anchor={x:renekton.hero.x,y:renekton.hero.y};
+  const hp=target.hp;
+  assert.ok(renekton.attack(target.id,{x:target.x,y:target.y}));
+  step(match,1.5);
+  assert.ok(target.hp<hp);
+});
+
+test('battlefield team economy advances and uses the same finite purchase path',()=>{
+  const match=new BattlefieldMatch();
+  step(match,12);
+  assert.ok(match.economy.blue.gold>200);
+  const actor=match.members[0];
+  actor.hero.x=battlefieldFountain('blue').x;
+  actor.hero.y=battlefieldFountain('blue').y;
+  const gold=match.economy.blue.gold;
+  assert.ok(match.purchase(actor,'armor'));
+  assert.equal(actor.equipment.armor,2);
+  assert.ok(match.economy.blue.gold<gold);
 });
