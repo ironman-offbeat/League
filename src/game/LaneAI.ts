@@ -43,14 +43,15 @@ export class LaneAI {
     }
     if(m.elapsed<AI_RULES.start){this.state='waiting';return;}
     if(hiddenChase){this.state='fight';return;}
-    const team=m.teamOf(c),enemyTeam=team==='red'?'blue':'red',direction=team==='red'?-1:1;
+    const team=m.teamOf(c),enemyTeam=team==='red'?'blue':'red';
     const tower=m.structure(enemyTeam,'tower');
+    const towerProgress=m.laneProgress(team,tower);
     const safe=(p:Point)=>!tower.alive||m.supported(tower,team)||distance(p,tower)>LANE.tower.range+AI_RULES.towerMargin;
     // Never continue a chase under an unescorted tower, even if a target has moved there.
-    if(!safe(c.hero)){this.state='retreat';this.move({x:tower.x-direction*(LANE.tower.range+AI_RULES.towerMargin+25),y:c.hero.y});return;}
+    if(!safe(c.hero)){this.state='retreat';this.move(m.laneAdvance(team,tower,-(LANE.tower.range+AI_RULES.towerMargin+25),false));return;}
     const hostileHeroes=visible.filter(t=>t.kind==='champion'&&distance(c.hero,t)<=AI_RULES.engage);
     const allies=m.teamMembers(team).filter(a=>a.alive&&distance(a.hero,c.hero)<=AI_RULES.engage);
-    if(hostileHeroes.length>allies.length+1){this.state='retreat';this.move({x:c.hero.x-direction*180,y:LANE.y});return;}
+    if(hostileHeroes.length>allies.length+1){this.state='retreat';this.move(m.laneAdvance(team,c.hero,-180,false));return;}
     const candidates=visible.filter(t=>t.kind!=='building'&&distance(c.hero,t)<=AI_RULES.engage&&safe(t));
     candidates.sort((a,b)=>Number(b.kind==='champion')-Number(a.kind==='champion')||distance(c.hero,a)-distance(c.hero,b));
     const target=candidates[0];
@@ -58,13 +59,15 @@ export class LaneAI {
       this.state='fight';this.attack(target);this.skills(target);return;
     }
     const escort=m.units.filter(u=>u.alive&&u.team===team&&u.kind==='minion');
-    const front=escort.length?escort.reduce((a,b)=>direction*a.x>direction*b.x?a:b).x:team==='red'?1060:540;
-    let x=front-direction*(c.stats.range>100?95:35);
-    if(tower.alive&&!m.supported(tower,team))x=team==='red'?Math.max(x,tower.x+LANE.tower.range+AI_RULES.towerMargin+20):Math.min(x,tower.x-LANE.tower.range-AI_RULES.towerMargin-20);
+    const fallback=m.laneProgress(team,{x:team==='red'?1060:540,y:LANE.y});
+    const front=escort.length?Math.max(...escort.map(unit=>m.laneProgress(team,unit))):fallback;
+    let progress=front-(c.stats.range>100?95:35);
+    if(tower.alive&&!m.supported(tower,team))progress=Math.min(progress,towerProgress-LANE.tower.range-AI_RULES.towerMargin-20);
     const building=tower.alive?tower:m.structure(enemyTeam,'nexus');
     if(m.supported(building,team)&&distance(c.hero,building)<=AI_RULES.engage){this.state='fight';this.attack(building);return;}
     this.state='advance';
-    const goal={x,y:LANE.y+(this.index%2?1:-1)*(25+Math.floor(this.index/2)*28)};
+    const lateral=(this.index%2?1:-1)*(25+Math.floor(this.index/2)*28);
+    const goal=m.lanePoint(team,Math.max(0,progress),team==='blue'?lateral:-lateral);
     if(c.command.kind!=='attackMove'||distance(c.command.point,goal)>45)c.attackMove(goal);
   }
   private move(point:Point){const c=this.actor;if(c.command.kind!=='move'||distance(c.command.point,point)>20)c.move(point);}
