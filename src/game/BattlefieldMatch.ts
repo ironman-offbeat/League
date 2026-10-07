@@ -147,9 +147,10 @@ export class BattlefieldMatch extends Squad {
     actor.visualId=profile.id;
     actor.progression.enabled=true;
     actor.initializeEquipment();
-    const start=battlefieldChampionSpawn(profile.id as keyof typeof BATTLEFIELD_ROLE_BY_CHAMPION,team);
-    Object.assign(actor.hero,start);
-    actor.anchor={...start};
+    // Matches begin at the team fountain so the opening shop is usable.
+    // Role staging points remain navigation data used by lane assignment/rally.
+    Object.assign(actor.hero,fountain);
+    actor.anchor={...fountain};
     actor.hero.facing=team==='blue'?0:Math.PI;
     actor.autoTargetAllowed=target=>target.kind!=='building'||this.supported(target,team);
     return actor;
