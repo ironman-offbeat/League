@@ -215,8 +215,8 @@ test('new battlefield waves join live champion target arrays and ordinary combat
 
 test('battlefield team economy advances and uses the same finite purchase path',()=>{
   const match=new BattlefieldMatch();
-  step(match,12);
-  assert.ok(match.economy.blue.gold>200);
+  step(match,40);
+  assert.ok(match.economy.blue.gold>=250);
   const actor=match.members[0];
   actor.hero.x=battlefieldFountain('blue').x;
   actor.hero.y=battlefieldFountain('blue').y;
