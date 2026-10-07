@@ -1,5 +1,13 @@
+import { Squad } from './Squad.ts';
+import { Combat } from './combat.ts';
+import { CHAMPIONS } from './champions.ts';
+import type { Champion } from './champions.ts';
 import { RULES, distance } from './config.ts';
 import type { Point } from './config.ts';
+import { PROGRESSION, TeamEconomy } from './progression.ts';
+import { championTarget } from './championTarget.ts';
+import { EQUIPMENT } from './equipment.ts';
+import type { Purchase } from './equipment.ts';
 import { freshStatus, tickStatus, towards } from './effects.ts';
 import { damageTarget } from './targets.ts';
 import type { Target } from './targets.ts';
