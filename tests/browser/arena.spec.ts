@@ -41,6 +41,8 @@ test('lane shop spends shared gold, upgrades only the selected hero and resets c
  await press('#mode');await expect(page.locator('#gear-summary')).toHaveText('무기 T1 · 방어 T1');
  await expect(page.locator('#rank-summary')).toHaveText('Q 1 · W 잠김 · E 잠김 · R 잠김');
  await expect(page.locator('#dash')).toBeDisabled();await expect(page.locator('#potion-use')).toBeDisabled();
+ await press('#recall');
+ await expect.poll(()=>page.evaluate(()=>{const h=(window as any).leagueDebug.hero;return Math.hypot(h.x-140,h.y-840);}),{timeout:15000}).toBeLessThan(2);
  await press('#shop-toggle');await expect(page.locator('#shop-panel')).toBeVisible();
  await expect(page.locator('#buy-armor')).toBeDisabled();await expect(page.locator('#buy-health')).toBeDisabled();
  await page.screenshot({path:`test-results/shop-${info.project.name}.png`});
