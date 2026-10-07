@@ -57,7 +57,7 @@ test('lane structure protection unlocks in order and any destroyed inhibitor ope
   assert.equal(nexus.protected,false);
 });
 
-test('role starts are data driven: top, mid, bottom and jungle are symmetric by team',()=>{
+test('role starts are data driven and each lane role begins at equal team-relative progress',()=>{
   assert.deepEqual(BATTLEFIELD_ROLE_BY_CHAMPION,{
     renekton:'top',
     annie:'mid',
@@ -65,14 +65,21 @@ test('role starts are data driven: top, mid, bottom and jungle are symmetric by 
     amumu:'jungle',
   });
 
-  for(const champion of Object.keys(BATTLEFIELD_ROLE_BY_CHAMPION) as (keyof typeof BATTLEFIELD_ROLE_BY_CHAMPION)[]){
+  const match=new BattlefieldMatch();
+  for(const champion of ['renekton','annie','ashe'] as const){
+    const lane=BATTLEFIELD_ROLE_BY_CHAMPION[champion];
     const blue=battlefieldChampionSpawn(champion,'blue');
     const red=battlefieldChampionSpawn(champion,'red');
     assert.ok(blue.x>=0&&blue.x<=RULES.world.width&&blue.y>=0&&blue.y<=RULES.world.height);
     assert.ok(red.x>=0&&red.x<=RULES.world.width&&red.y>=0&&red.y<=RULES.world.height);
-    assert.ok(Math.abs((blue.x+red.x)-RULES.world.width)<1e-6);
-    assert.ok(Math.abs((blue.y+red.y)-RULES.world.height)<1e-6);
+    assert.ok(Math.abs(match.laneProgress('blue',lane,blue)-110)<1e-6);
+    assert.ok(Math.abs(match.laneProgress('red',lane,red)-110)<1e-6);
   }
+
+  const blueJungle=battlefieldChampionSpawn('amumu','blue');
+  const redJungle=battlefieldChampionSpawn('amumu','red');
+  assert.ok(blueJungle.x<RULES.world.width/2&&blueJungle.y>RULES.world.height/2);
+  assert.ok(redJungle.x>RULES.world.width/2&&redJungle.y<RULES.world.height/2);
 });
 
 test('first battlefield wave spawns independently on all three lanes for both teams',()=>{
