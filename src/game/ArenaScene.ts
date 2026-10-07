@@ -349,7 +349,44 @@ export class ArenaScene extends Phaser.Scene {
   private drawMap() {
     this.mapLayer?.destroy(true);this.mapLayer=this.add.container(0,0).setDepth(0);
     const g=this.add.graphics();this.mapLayer.add(g);const w=RULES.world.width,h=RULES.world.height;
-    if(this.match){
+    if(this.battlefield){
+      g.fillStyle(0x21382f);g.fillRect(0,0,w,h);
+      g.fillStyle(0x2d4a3b,.9);g.fillRoundedRect(210,170,1180,660,120);
+      g.lineStyle(74,0x305c61,.28);g.lineBetween(610,80,990,920);
+      g.lineStyle(3,0x6ba0a2,.32);g.lineBetween(610,80,990,920);
+
+      const lanes=[['top','TOP'],['mid','MID'],['bottom','BOTTOM']] as const;
+      for(const [lane,label] of lanes){
+        const route=battlefieldLaneRoute(lane,'blue');
+        g.lineStyle(116,0x5a5d49,.82);g.beginPath();g.moveTo(route[0].x,route[0].y);
+        for(const p of route.slice(1))g.lineTo(p.x,p.y);
+        g.strokePath();
+        g.lineStyle(70,0x74715a,.34);g.beginPath();g.moveTo(route[0].x,route[0].y);
+        for(const p of route.slice(1))g.lineTo(p.x,p.y);
+        g.strokePath();
+        g.lineStyle(2,0xb7af79,.22);g.beginPath();g.moveTo(route[0].x,route[0].y);
+        for(const p of route.slice(1))g.lineTo(p.x,p.y);
+        g.strokePath();
+        const mid=route[Math.floor(route.length/2)];
+        this.mapLayer.add(this.add.text(mid.x,mid.y-42,label,{fontFamily:'Georgia,serif',fontSize:'18px',color:'#d4cf9c',stroke:'#21382f',strokeThickness:3}).setOrigin(.5).setAlpha(.68));
+      }
+
+      for(const id of ['blue-jungle-top','blue-jungle-bottom','red-jungle-top','red-jungle-bottom'] as const){
+        const p=BATTLEFIELD_NAVIGATION.node(id).point;
+        g.fillStyle(id.startsWith('blue')?0x355f5c:0x654b49,.18);g.fillCircle(p.x,p.y,64);
+        g.lineStyle(2,id.startsWith('blue')?0x79b9cc:0xd98b78,.22);g.strokeCircle(p.x,p.y,45);
+      }
+      for(const id of ['blue-base','red-base'] as const){
+        const p=BATTLEFIELD_NAVIGATION.node(id).point;
+        const blue=id==='blue-base';
+        g.fillStyle(blue?0x345e60:0x664c48,.9);g.fillCircle(p.x,p.y,105);
+        g.lineStyle(4,blue?0x79b9cc:0xd98b78,.65);g.strokeCircle(p.x,p.y,88);
+        g.lineStyle(1,0xe3ddb6,.35);g.strokeCircle(p.x,p.y,72);
+      }
+      this.mapLayer.add(this.add.text(800,54,'THREE LANE BATTLEFIELD',{fontFamily:'Georgia,serif',fontSize:'18px',color:'#b8c39a'}).setOrigin(.5).setAlpha(.5));
+      return;
+    }
+    if(this.laneMatch){
       g.fillStyle(0x263d32);g.fillRect(0,0,w,h);
       g.fillStyle(0x62604a);g.fillRoundedRect(60,LANE.y-110,w-120,220,65);
       g.lineStyle(2,0xa49b6b,.25);g.lineBetween(100,LANE.y,1500,LANE.y);
