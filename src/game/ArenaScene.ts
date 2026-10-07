@@ -1,6 +1,8 @@
 import { VisualDirector } from '../render/VisualDirector.ts';
 import { actorVisual, motionFor } from '../render/assets.ts';
 import { LaneMatch, LANE } from './LaneMatch.ts';
+import { BattlefieldMatch, BATTLEFIELD } from './BattlefieldMatch.ts';
+import { BATTLEFIELD_NAVIGATION, battlefieldLaneRoute } from './navigation.ts';
 import Phaser from 'phaser';
 import type { SkillSlot } from './skillConfig.ts';
 import { SKILLS } from './skillConfig.ts';
@@ -11,8 +13,10 @@ import type { Point } from './config.ts';
 export class ArenaScene extends Phaser.Scene {
   squad:Squad = new Squad(true);
   get match(){return this.squad instanceof LaneMatch?this.squad:null;}
-  get champions(){return this.match?.actors??this.squad.members;}
-  get blocked(){return this.paused||!!this.match?.result;}
+  get battlefield(){return this.squad instanceof BattlefieldMatch?this.squad:null;}
+  get session(){return this.match??this.battlefield;}
+  get champions(){return this.session?.actors??this.squad.members;}
+  get blocked(){return this.paused||!!this.session?.result;}
   private visuals?:VisualDirector;
   private lastPositions=new Map<string,Point>();
   private poses=new Map<string,{kind:'cast'|'hurt';until:number}>();
@@ -76,16 +80,20 @@ export class ArenaScene extends Phaser.Scene {
   setPaused(value: boolean) { this.paused=value; this.visuals?.setPaused(this.blocked); this.accumulator=0; this.cancelGesture(); this.onFrame(this); }
   cancelGesture() { this.gesture=null; this.aimSlot=null; this.aim=null; }
   centerHero() { this.cameras.main.centerOn(this.combat.hero.x+100,this.combat.hero.y-25); }
-  startMode(lane:boolean) {
+  private replaceSquad(next:Squad,notice:string){
     this.visuals?.clear();this.lastPositions.clear();this.poses.clear();
-    this.squad=lane?new LaneMatch():new Squad(true);
-    this.accumulator=0;this.cancelGesture();
+    this.squad=next;this.accumulator=0;this.cancelGesture();
     this.labels.forEach(label=>label.destroy());
     this.labels=this.combat.enemies.map(()=>this.add.text(0,0,'',{fontFamily:'Malgun Gothic, sans-serif',fontSize:'11px',color:'#e4ddbd',backgroundColor:'#18241dc0',padding:{x:5,y:3}}).setOrigin(.5).setDepth(7));
-    this.drawMap();this.centerHero();
-    this.notify(lane?'적 챔피언 4명과 교전합니다 · 미니언과 함께 전진하세요.':'연습장을 초기화했습니다.');
+    this.drawMap();this.centerHero();this.notify(notice);
   }
-  restartTraining(){this.startMode(!!this.match);}
+  startMode(lane:boolean){
+    this.replaceSquad(lane?new LaneMatch():new Squad(true),lane?'적 챔피언 4명과 교전합니다 · 미니언과 함께 전진하세요.':'연습장을 초기화했습니다.');
+  }
+  startBattlefield(){
+    this.replaceSquad(new BattlefieldMatch(),'3라인 전장 · 역할별 시작 위치에서 네 챔피언을 직접 지휘합니다.');
+  }
+  restartTraining(){if(this.battlefield)this.startBattlefield();else this.startMode(!!this.match);}
   rally(){
     if(!this.match||this.blocked)return;
     const front=Math.max(600,...this.match.units.filter(u=>u.team==='blue'&&u.kind==='minion'&&u.alive).map(u=>u.x-60));
