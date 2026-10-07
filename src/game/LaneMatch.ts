@@ -277,9 +277,17 @@ export class LaneMatch extends Squad {
     for(const brain of this.ai)brain.step(dt);
     for(const c of this.actors){
       // Automatic siege stops when its escort dies. Explicit attack orders remain risky by choice.
-      const team=this.teamOf(c),tower=this.structure(team==='blue'?'red':'blue','tower');
-      if(c.alive&&c.command.kind==='idle'&&tower.alive&&!this.supported(tower,team)&&distance(c.hero,tower)<=LANE.tower.range){
-        c.move({x:tower.x+(team==='blue'?-1:1)*(LANE.tower.range+50),y:c.hero.y});
+      // Check every hostile lane tower so a roaming champion cannot idle under an off-lane tower.
+      const team=this.teamOf(c),enemyTeam=team==='blue'?'red':'blue';
+      const tower=this.structures(enemyTeam,'tower')
+        .filter(t=>t.alive&&!this.supported(t,team,t.lane??undefined)&&distance(c.hero,t)<=LANE.tower.range)
+        .sort((a,b)=>distance(c.hero,a)-distance(c.hero,b))[0];
+      if(c.alive&&c.command.kind==='idle'&&tower){
+        const d=Math.max(1,distance(c.hero,tower));
+        c.move({
+          x:tower.x+(c.hero.x-tower.x)/d*(LANE.tower.range+50),
+          y:tower.y+(c.hero.y-tower.y)/d*(LANE.tower.range+50),
+        });
       }
       c.step(dt,false);
     }
