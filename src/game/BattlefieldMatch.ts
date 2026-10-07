@@ -20,6 +20,7 @@ import {
   advanceOnRoute,
 } from './navigation.ts';
 import type { LaneId, NavigationTeam } from './navigation.ts';
+import { BattlefieldAI } from './BattlefieldAI.ts';
 
 export type BattlefieldTeam=NavigationTeam;
 export type BattlefieldMinionRole='melee'|'ranged'|'siege';
@@ -95,13 +96,14 @@ export class BattlefieldMatch extends Squad {
   wave=0;
   nextWave=BATTLEFIELD.firstWave;
   result:BattlefieldResult|null=null;
+  ai:BattlefieldAI[]=[];
   private serial=0;
 
   get actors(){return [...this.members,...this.opponents];}
   teamOf(actor:Combat):BattlefieldTeam{return this.opponents.includes(actor)?'red':'blue';}
   teamMembers(team:BattlefieldTeam){return team==='blue'?this.members:this.opponents;}
 
-  constructor(){
+  constructor(options:{ai?:boolean}={}){
     super(false);
     for(const team of ['blue','red'] as const){
       for(const lane of LANES){
@@ -129,6 +131,7 @@ export class BattlefieldMatch extends Squad {
     this.enemies.push(...redTargets);
 
     for(const actor of this.actors)actor.onDeath=()=>this.rewardChampion(actor);
+    if(options.ai)this.ai=this.opponents.map((actor,index)=>new BattlefieldAI(this,actor,index));
     this.updateProtection();
   }
 
@@ -382,6 +385,7 @@ export class BattlefieldMatch extends Squad {
     }
 
     this.updateProtection();
+    for(const brain of this.ai)brain.step(dt);
     for(const actor of this.actors)actor.step(dt,false);
     this.updateProtection();
 
