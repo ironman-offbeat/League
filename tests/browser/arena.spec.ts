@@ -216,3 +216,35 @@ test('target defeat continues toward the attacked location instead of returning 
  expect(d.anchor).toEqual(destination);
  expect(d.hero.x).toBeGreaterThan(700);expect(errors).toEqual([]);
 });
+
+
+test('three-lane battlefield opens as a separate playable session and returns to training',async({page,isMobile},info)=>{
+  test.setTimeout(60000);
+  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.goto('/');await expect(page.locator('body')).toHaveAttribute('data-ready','true');
+  const press=async(id:string)=>{if(isMobile)await page.locator(id).tap();else await page.locator(id).click();};
+  await press('#battlefield-mode');
+  await expect(page.locator('#session-name')).toHaveText('3라인 전장');
+  await expect(page.locator('#match-hud')).toBeVisible();
+  await expect(page.locator('#inventory')).toBeVisible();
+  await expect(page.locator('#battlefield-mode')).toBeHidden();
+  await expect(page.locator('#rally')).toBeHidden();
+  await expect(page.locator('#front-camera')).toHaveText('전체 지도');
+  expect(await page.evaluate(()=>(window as any).leagueDebug.mode)).toBe('battlefield');
+  expect(await page.evaluate(()=>(window as any).leagueDebug.match.units.filter((u:any)=>u.kind==='building').length)).toBe(20);
+  expect(await page.evaluate(()=>(window as any).leagueDebug.match.opponents.length)).toBe(4);
+  expect(await page.evaluate(()=>new Set((window as any).leagueDebug.members.map((m:any)=>`${Math.round(m.hero.x)}:${Math.round(m.hero.y)}`)).size)).toBe(4);
+
+  const before=await page.evaluate(()=>(window as any).leagueDebug.hero);
+  const point=await page.evaluate(()=>{const d=(window as any).leagueDebug,r=document.querySelector('canvas')!.getBoundingClientRect();return{sx:r.left+d.hero.x-d.camera.x,sy:r.top+d.hero.y-d.camera.y,x:r.left+d.hero.x-d.camera.x+70,y:r.top+d.hero.y-d.camera.y+20};});
+  await page.mouse.move(point.sx,point.sy);await page.mouse.down();await page.mouse.move(point.x,point.y,{steps:8});await page.mouse.up();
+  await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.hero.x)).toBeGreaterThan(before.x+45);
+
+  await press('#front-camera');
+  await page.screenshot({path:`test-results/battlefield-${info.project.name}.png`});
+  await press('#mode');
+  await expect(page.locator('#session-name')).toHaveText('조작 연습장');
+  await expect(page.locator('#battlefield-mode')).toBeVisible();
+  expect(await page.evaluate(()=>(window as any).leagueDebug.mode)).toBe('training');
+  expect(errors).toEqual([]);
+});
