@@ -1,6 +1,8 @@
 import { VisualDirector } from '../render/VisualDirector.ts';
 import { actorVisual, motionFor } from '../render/assets.ts';
 import { LaneMatch, LANE } from './LaneMatch.ts';
+import { BattlefieldMatch, BATTLEFIELD, BATTLEFIELD_ROLE_BY_CHAMPION } from './BattlefieldMatch.ts';
+import type { BattlefieldUnit } from './BattlefieldMatch.ts';
 import Phaser from 'phaser';
 import type { SkillSlot } from './skillConfig.ts';
 import { SKILLS } from './skillConfig.ts';
@@ -10,7 +12,9 @@ import type { Point } from './config.ts';
 
 export class ArenaScene extends Phaser.Scene {
   squad:Squad = new Squad(true);
-  get match(){return this.squad instanceof LaneMatch?this.squad:null;}
+  get laneMatch(){return this.squad instanceof LaneMatch?this.squad:null;}
+  get battlefieldMatch(){return this.squad instanceof BattlefieldMatch?this.squad:null;}
+  get match(){return this.laneMatch??this.battlefieldMatch;}
   get champions(){return this.match?.actors??this.squad.members;}
   get blocked(){return this.paused||!!this.match?.result;}
   private visuals?:VisualDirector;
@@ -76,19 +80,46 @@ export class ArenaScene extends Phaser.Scene {
   setPaused(value: boolean) { this.paused=value; this.visuals?.setPaused(this.blocked); this.accumulator=0; this.cancelGesture(); this.onFrame(this); }
   cancelGesture() { this.gesture=null; this.aimSlot=null; this.aim=null; }
   centerHero() { this.cameras.main.centerOn(this.combat.hero.x+100,this.combat.hero.y-25); }
-  startMode(lane:boolean) {
+  centerFront(){
+    const battlefield=this.battlefieldMatch;
+    if(battlefield){
+      const role=BATTLEFIELD_ROLE_BY_CHAMPION[this.combat.visualId as keyof typeof BATTLEFIELD_ROLE_BY_CHAMPION];
+      if(role==='jungle'){this.cameras.main.centerOn(...Object.values(battlefield.lanePoint('blue','mid',battlefield.laneLength('mid')*.45)) as [number,number]);return;}
+      const front=Math.max(180,...battlefield.minions('blue',role).map(unit=>battlefield.laneProgress('blue',role,unit)));
+      const point=battlefield.lanePoint('blue',role,Math.min(battlefield.laneLength(role)-180,front+80));
+      this.cameras.main.centerOn(point.x,point.y);return;
+    }
+    const lane=this.laneMatch;
+    if(lane){const front=Math.max(600,...lane.units.filter(u=>u.team==='blue'&&u.kind==='minion'&&u.alive).map(u=>u.x));this.cameras.main.centerOn(front,LANE.y);}
+  }
+  startMode(match:boolean) {
     this.visuals?.clear();this.lastPositions.clear();this.poses.clear();
-    this.squad=lane?new LaneMatch():new Squad(true);
+    this.squad=match?new BattlefieldMatch():new Squad(true);
     this.accumulator=0;this.cancelGesture();
     this.labels.forEach(label=>label.destroy());
     this.labels=this.combat.enemies.map(()=>this.add.text(0,0,'',{fontFamily:'Malgun Gothic, sans-serif',fontSize:'11px',color:'#e4ddbd',backgroundColor:'#18241dc0',padding:{x:5,y:3}}).setOrigin(.5).setDepth(7));
     this.drawMap();this.centerHero();
-    this.notify(lane?'적 챔피언 4명과 교전합니다 · 미니언과 함께 전진하세요.':'연습장을 초기화했습니다.');
+    this.notify(match?'3라인 전장 · Top/Mid/Bottom 웨이브가 동시에 전진합니다.':'연습장을 초기화했습니다.');
   }
   restartTraining(){this.startMode(!!this.match);}
   rally(){
     if(!this.match||this.blocked)return;
-    const front=Math.max(600,...this.match.units.filter(u=>u.team==='blue'&&u.kind==='minion'&&u.alive).map(u=>u.x-60));
+    const battlefield=this.battlefieldMatch;
+    if(battlefield){
+      this.squad.members.forEach((c,i)=>{
+        const role=BATTLEFIELD_ROLE_BY_CHAMPION[c.visualId as keyof typeof BATTLEFIELD_ROLE_BY_CHAMPION];
+        if(role==='jungle'){
+          const point=battlefield.lanePoint('blue','mid',battlefield.laneLength('mid')*.38,(i-1.5)*16);
+          c.move(point);return;
+        }
+        const front=Math.max(180,...battlefield.minions('blue',role).map(unit=>battlefield.laneProgress('blue',role,unit)));
+        c.move(battlefield.lanePoint('blue',role,Math.min(battlefield.laneLength(role)-240,front+70),(i-1.5)*14));
+      });
+      this.notify('라인 집결 · 각 챔피언이 자신의 역할 경로 전선으로 이동합니다.');
+      return;
+    }
+    const lane=this.laneMatch!;
+    const front=Math.max(600,...lane.units.filter(u=>u.team==='blue'&&u.kind==='minion'&&u.alive).map(u=>u.x-60));
     this.squad.members.forEach((c,i)=>c.move({x:Math.min(1390,front)-(i%2)*55,y:LANE.y+(Math.floor(i/2)*2-1)*42}));
     this.notify('전선 집결 · 각 챔피언의 이동·공격 명령으로 조정할 수 있습니다.');
   }
