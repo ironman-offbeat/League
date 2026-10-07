@@ -42,7 +42,7 @@ export class TeamVision {
   pointVisible(team:VisionTeam,p:Point){
     return this.inside(p)&&this.sources.some(s=>s.team===team&&this.covers(s,p));
   }
-  private subjectKey(subject:VisionSubject){return `${subject.id}:${subject.generation}`;}
+  private subjectKey(subject:VisionSubject){return `${subject.id}:${subject.generation}:${subject.team}:${subject.alive?1:0}:${subject.exposed?1:0}:${subject.x}:${subject.y}`;}
   private detects(team:VisionTeam,subject:VisionSubject){
     if(!subject.alive||!this.inside(subject))return false;
     if(subject.team===team)return true;
