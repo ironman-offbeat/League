@@ -77,8 +77,8 @@ test('low-health AI escapes tower range instead of repeatedly recalling under fi
  m.refreshVision();brain.step(.3);assert.equal(brain.state,'retreat');assert.equal(c.command.kind,'move');assert.deepEqual(c.anchor,c.profile.spawn);
 });
 test('AI respects visibility, preserves attack windup and does not chase unescorted tower targets',()=>{
- const m=new LaneMatch({ai:false}),c=m.opponents[0],enemy=m.members[0],brain=new LaneAI(m,c,0);m.elapsed=20;
- // Enemy is inside south bush while AI is just outside it: close but concealed.
+ const m=new LaneMatch({ai:false}),c=m.opponents[1],enemy=m.members[0],brain=new LaneAI(m,c,1);m.elapsed=20;
+ // Mid-lane enemy is inside south bush while AI is just outside it: close but concealed.
  c.hero.x=960;c.hero.y=560;enemy.hero.x=900;enemy.hero.y=560;m.refreshVision();brain.step(.3);assert.notEqual(c.command.kind,'attack');
  // Entering the same bush reveals the enemy under the shared vision rules.
  c.hero.x=930;m.refreshVision();brain.step(.4);assert.equal(c.command.kind,'attack');c.cooldown.q=100;c.step(.01,false);const pending=c.pending;assert.ok(pending);brain.step(.4);assert.equal(c.pending,pending);c.step(.3,false);assert.ok(enemy.hero.hp<enemy.hero.maxHp);

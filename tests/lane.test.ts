@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { LaneMatch, LANE } from '../src/game/LaneMatch.ts';
 import { RULES } from '../src/game/config.ts';
+import { LANE_IDS, laneRoute, routeProgress } from '../src/game/mapLayout.ts';
 import { damageTarget } from '../src/game/targets.ts';
 import { Combat } from '../src/game/combat.ts';
 import { CHAMPIONS } from '../src/game/champions.ts';
@@ -10,8 +11,10 @@ const kill=(u:{hp:number;alive:boolean})=>{u.hp=0;u.alive=false;};
 
 test('first wave at 10s, every 20s, third wave includes siege minions; arrays stay shared',()=>{
  const m=new LaneMatch(),shared=m.enemies;step(m,9);assert.equal(m.wave,0);step(m,1);assert.equal(m.wave,1);
- assert.equal(m.units.filter(u=>u.kind==='minion').length,10);step(m,40);assert.equal(m.wave,3);
- assert.equal(m.units.filter(u=>u.role==='siege').length,2);assert.equal(m.enemies,shared);assert.ok(m.members.every(c=>c.enemies===shared));
+ assert.equal(m.units.filter(u=>u.kind==='minion').length,30);
+ for(const lane of LANE_IDS)assert.equal(m.units.filter(u=>u.kind==='minion'&&u.lane===lane).length,10);
+ step(m,40);assert.equal(m.wave,3);
+ assert.equal(m.units.filter(u=>u.role==='siege').length,6);assert.equal(m.enemies,shared);assert.ok(m.members.every(c=>c.enemies===shared));
 });
 test('tower gates nexus, buildings reject skill damage, unescorted basic attacks deal 25%',()=>{
  const m=new LaneMatch(),tower=m.structure('red','tower'),nexus=m.structure('red','nexus');
@@ -20,14 +23,14 @@ test('tower gates nexus, buildings reject skill damage, unescorted basic attacks
  kill(tower);m.step(RULES.step);assert.equal(nexus.protected,false);assert.ok(damageTarget(nexus,140,'physical','basic')>0);
 });
 test('nearby escort removes backdoor reduction; dead minions do not respawn or retain array slots',()=>{
- const m=new LaneMatch();step(m,10);const tower=m.structure('red','tower'),minion=m.units.find(u=>u.team==='blue'&&u.kind==='minion')!;
+ const m=new LaneMatch();step(m,10);const tower=m.structure('red','tower'),minion=m.units.find(u=>u.team==='blue'&&u.kind==='minion'&&u.lane==='mid')!;
  minion.x=tower.x-200;minion.y=tower.y;m.step(RULES.step);assert.equal(tower.damageScale,1);
  assert.equal(damageTarget(tower,140,'physical','basic'),100);kill(minion);m.step(RULES.step);assert.equal(tower.damageScale,.25);assert.ok(!m.units.includes(minion));step(m,4);assert.equal(minion.alive,false);
 });
 test('tower selects minion before closer champion and its windup can be escaped',()=>{
  const m=new LaneMatch();step(m,10);const tower=m.structure('red','tower'),hero=m.members[0];
  hero.hero.x=tower.x-70;hero.hero.y=tower.y;hero.attack(tower.id);
- const minion=m.units.find(u=>u.team==='blue'&&u.kind==='minion')!;minion.x=tower.x-210;minion.y=tower.y;
+ const minion=m.units.find(u=>u.team==='blue'&&u.kind==='minion'&&u.lane==='mid')!;minion.x=tower.x-210;minion.y=tower.y;
  m.step(RULES.step);assert.equal(m.towerShots.get(tower.id)?.target.unit,minion);
  const hp=minion.hp;minion.x=600;step(m,.5);assert.equal(minion.hp,hp);
 });
@@ -65,7 +68,7 @@ test('lane recall and respawn return to match spawn, and wave clocks do not mult
  c.receiveDamage(1e6);step(m,6.6);assert.ok(c.alive);assert.equal(c.hero.x,c.profile.spawn.x);assert.equal(m.wave,1);
 });
 test('long unattended match keeps waves bounded and minions fight opposing structures',()=>{
- const m=new LaneMatch();step(m,360);assert.ok(m.units.length<100);assert.ok(m.structure('red','tower').hp<m.structure('red','tower').maxHp||m.structure('blue','tower').hp<m.structure('blue','tower').maxHp);
+ const m=new LaneMatch();step(m,360);assert.ok(m.units.length<240);assert.ok(m.structure('red','tower').hp<m.structure('red','tower').maxHp||m.structure('blue','tower').hp<m.structure('blue','tower').maxHp);
 });
 test('isolated siege fixture finishes through tower then nexus without champion opposition',()=>{
  const m=new LaneMatch({enemyChampions:false});
@@ -77,4 +80,27 @@ test('isolated siege fixture finishes through tower then nexus without champion 
   m.step(RULES.step);
  }
  assert.equal(m.result,'victory');assert.equal(m.structure('red','tower').alive,false);assert.equal(m.structure('red','nexus').alive,false);
+});
+
+
+test('three lanes have independent towers and minions advance along their own configured routes',()=>{
+ const m=new LaneMatch({ai:false});
+ for(const lane of LANE_IDS){
+  assert.equal(m.structure('blue','tower',lane).lane,lane);
+  assert.equal(m.structure('red','tower',lane).lane,lane);
+ }
+ step(m,10);
+ const tracked=LANE_IDS.map(lane=>m.units.find(u=>u.team==='blue'&&u.kind==='minion'&&u.lane===lane)!);
+ const before=tracked.map((u,i)=>routeProgress(laneRoute(LANE_IDS[i],'blue'),u));
+ step(m,1);
+ tracked.forEach((u,i)=>{
+  assert.equal(u.lane,LANE_IDS[i]);
+  assert.ok(routeProgress(laneRoute(LANE_IDS[i],'blue'),u)>before[i]);
+ });
+});
+
+test('destroying one lane tower opens the nexus while other lane towers remain independent',()=>{
+ const m=new LaneMatch({ai:false}),mid=m.structure('red','tower','mid'),top=m.structure('red','tower','top'),nexus=m.structure('red','nexus');
+ assert.equal(nexus.protected,true);kill(mid);m.step(RULES.step);
+ assert.equal(top.alive,true);assert.equal(nexus.protected,false);
 });

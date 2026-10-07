@@ -1,7 +1,7 @@
 # League development rules
 
 - User directs game design and performs acceptance QA; do implementation autonomously within approved scope.
-- Current scope is a four-champion training arena and compact one-lane siege prototype. Lane progression, shared gold, T1–T3 gear, one potion slot and fixed-order Q/W/E/R ranks are implemented. Enemy champions use the same Combat implementation with deterministic lane AI. The full map, fog/bush integration and jungle remain future work. Do not claim this is a complete MOBA.
+- Current scope is a four-champion training arena plus a three-lane route foundation. Shared vision/bush rules, lane progression, shared gold, T1–T3 gear, one potion slot and fixed-order Q/W/E/R ranks are implemented. Enemy champions use the same Combat implementation with deterministic lane AI. Jungle camps, obstacle navigation, objectives and the final full map remain future work. Do not claim this is a complete MOBA.
 - Canonical design is docs/DESIGN.md. New numeric values are provisional balance settings, not proven values.
 - Keep simulation independent of Phaser rendering. Commands share one rules path; data belongs in config.
 - Explicit move overrides attack and cancels windup without resetting attack cooldown.
