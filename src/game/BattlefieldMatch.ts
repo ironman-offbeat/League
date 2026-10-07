@@ -83,15 +83,26 @@ export function battlefieldChampionSpawn(championId:keyof typeof BATTLEFIELD_ROL
   return pointOnRoute(route,team,110,0);
 }
 
-export class BattlefieldMatch {
+export class BattlefieldMatch extends Squad {
   readonly units:BattlefieldUnit[]=[];
+  enemies:Target[]=[];
+  opponents:Combat[]=[];
+  private redTargets:Target[]=[];
+  championTargets:Target[]=[];
+  kills={blue:0,red:0};
+  economy={blue:new TeamEconomy(),red:new TeamEconomy()};
   elapsed=0;
   wave=0;
   nextWave=BATTLEFIELD.firstWave;
   result:BattlefieldResult|null=null;
   private serial=0;
 
+  get actors(){return [...this.members,...this.opponents];}
+  teamOf(actor:Combat):BattlefieldTeam{return this.opponents.includes(actor)?'red':'blue';}
+  teamMembers(team:BattlefieldTeam){return team==='blue'?this.members:this.opponents;}
+
   constructor(){
+    super(false);
     for(const team of ['blue','red'] as const){
       for(const lane of LANES){
         for(const role of ['inhibitor','inner','outer'] as const){
@@ -101,9 +112,23 @@ export class BattlefieldMatch {
           this.units.push(this.createUnit(team,lane,role,point));
         }
       }
-      const base=BATTLEFIELD_NAVIGATION.node(team==='blue'?'blue-base':'red-base').point;
-      this.units.push(this.createUnit(team,null,'nexus',base));
+      this.units.push(this.createUnit(team,null,'nexus',battlefieldFountain(team)));
     }
+
+    this.enemies.push(...this.units.filter(unit=>unit.team==='red'));
+    this.redTargets.push(...this.units.filter(unit=>unit.team==='blue'));
+
+    this.members=CHAMPIONS.map(profile=>this.createChampion(profile,'blue',this.enemies));
+    const blueTargets=this.members.map(championTarget);
+    this.championTargets.push(...blueTargets);
+    this.redTargets.push(...blueTargets);
+
+    this.opponents=CHAMPIONS.map(profile=>this.createChampion(profile,'red',this.redTargets));
+    const redTargets=this.opponents.map(championTarget);
+    this.championTargets.push(...redTargets);
+    this.enemies.push(...redTargets);
+
+    for(const actor of this.actors)actor.onDeath=()=>this.rewardChampion(actor);
     this.updateProtection();
   }
 
