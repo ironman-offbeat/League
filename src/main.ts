@@ -25,25 +25,35 @@ const portraitQuery=window.matchMedia('(orientation: portrait) and (max-width: 9
 function syncPause(){skillDrag=null;scene.setPaused(manualPause||helpOpen||backgroundPause||portraitQuery.matches);el('pause-overlay').hidden=!(manualPause||backgroundPause)||helpOpen;el('pause').textContent=manualPause?'계속하기':'일시정지';}
 scene.notify=text=>{if(lastToast!==text){el('toast').textContent=text;lastToast=text;}};
 scene.onFrame=s=>{
-  const c=s.combat,match=s.match;
+  const c=s.combat,match=s.match,battlefield=s.battlefield,session=s.session;
   updateShop();
-  el('mode').textContent=match?'연습장으로':'한 라인 경기';
-  el('session-name').textContent=match?'한 라인 공성':'조작 연습장';
-  el('retaliation').hidden=!!match;el('training-objectives').hidden=!!match;el('match-hud').hidden=!match;
-  el('result-overlay').hidden=!match?.result;
-  if(match){
-    const time=`${Math.floor(match.elapsed/60).toString().padStart(2,'0')}:${Math.floor(match.elapsed%60).toString().padStart(2,'0')}`;
+  el('mode').textContent=session?'연습장으로':'한 라인 경기';
+  el('battlefield-mode').hidden=!!session;
+  el('session-name').textContent=battlefield?'3라인 전장':match?'한 라인 공성':'조작 연습장';
+  el('retaliation').hidden=!!session;el('training-objectives').hidden=!!session;el('match-hud').hidden=!session;
+  el('rally').hidden=!!battlefield;
+  el('front-camera').textContent=battlefield?'전체 지도':'전선 보기';
+  el('result-overlay').hidden=!session?.result;
+  if(session){
+    const time=`${Math.floor(session.elapsed/60).toString().padStart(2,'0')}:${Math.floor(session.elapsed%60).toString().padStart(2,'0')}`;
     el('match-clock').textContent=time;
-    el('team-gold').textContent=`팀 골드 ${Math.floor(match.economy.blue.gold+1e-8)}`;
-    const tower=match.structure('red','tower'),blue=match.structure('blue','nexus'),red=match.structure('red','nexus');
-    el('match-objective').textContent=tower.alive?`적 타워 ${Math.ceil(tower.hp)} · 미니언과 함께 공성`:`적 넥서스 ${Math.ceil(red.hp)} · 파괴하면 승리`;
-    el('match-wave').textContent=`처치 ${match.kills.blue} : ${match.kills.red} · 아군 넥서스 ${Math.ceil(blue.hp)} · ${match.wave}차 출발 · 증원 ${Math.max(0,Math.ceil(match.nextWave-match.elapsed))}초`;
-    if(match.result){el('result-title').textContent={victory:'승리!',defeat:'패배',draw:'무승부'}[match.result];el('result-summary').textContent=`${time} · ${match.wave}차 미니언 · 획득 골드 ${Math.floor(match.economy.blue.earned)} · 총 피해 ${Math.round(match.members.reduce((sum,m)=>sum+m.damage,0)).toLocaleString('ko-KR')} · ${match.result==='victory'?'적 넥서스를 파괴했습니다.':match.result==='defeat'?'아군 넥서스가 파괴되었습니다.':'두 넥서스가 동시에 파괴되었습니다.'}`;}
+    el('team-gold').textContent=`팀 골드 ${Math.floor(session.economy.blue.gold+1e-8)}`;
+    if(battlefield){
+      const blue=battlefield.structure('blue','nexus'),red=battlefield.structure('red','nexus');
+      const defenses=battlefield.units.filter(u=>u.team==='red'&&u.kind==='building'&&u.role!=='nexus'&&u.alive).length;
+      el('match-objective').textContent=defenses?`적 방어 건물 ${defenses}개 · 각 라인을 밀어 넥서스를 개방하세요.`:`적 넥서스 ${Math.ceil(red.hp)} · 파괴하면 승리`;
+      el('match-wave').textContent=`처치 ${battlefield.kills.blue} : ${battlefield.kills.red} · 아군 넥서스 ${Math.ceil(blue.hp)} · ${battlefield.wave}차 출발 · 증원 ${Math.max(0,Math.ceil(battlefield.nextWave-battlefield.elapsed))}초`;
+    }else if(match){
+      const tower=match.structure('red','tower'),blue=match.structure('blue','nexus'),red=match.structure('red','nexus');
+      el('match-objective').textContent=tower.alive?`적 타워 ${Math.ceil(tower.hp)} · 미니언과 함께 공성`:`적 넥서스 ${Math.ceil(red.hp)} · 파괴하면 승리`;
+      el('match-wave').textContent=`처치 ${match.kills.blue} : ${match.kills.red} · 아군 넥서스 ${Math.ceil(blue.hp)} · ${match.wave}차 출발 · 증원 ${Math.max(0,Math.ceil(match.nextWave-match.elapsed))}초`;
+    }
+    if(session.result){el('result-title').textContent={victory:'승리!',defeat:'패배',draw:'무승부'}[session.result];el('result-summary').textContent=`${time} · ${session.wave}차 미니언 · 획득 골드 ${Math.floor(session.economy.blue.earned)} · 총 피해 ${Math.round(session.members.reduce((sum,m)=>sum+m.damage,0)).toLocaleString('ko-KR')} · ${session.result==='victory'?'적 넥서스를 파괴했습니다.':session.result==='defeat'?'아군 넥서스가 파괴되었습니다.':'두 넥서스가 동시에 파괴되었습니다.'}`;}
   }
   const fury=c.profile.kit==='fury';
   el('champion-name').textContent=c.profile.name;
   el('champion-status').textContent=`Lv. ${c.progression.level}${c.profile.kit==='flame'?` · 불꽃 ${c.abilities.stacks}/3`:''}`;
-  el('xp-track').hidden=!match;
+  el('xp-track').hidden=!session;
   el('xp-bar').style.width=`${c.progression.capped?100:c.progression.xp/c.progression.required*100}%`;
   el('xp-text').textContent=c.progression.capped?'최대 레벨':`XP ${Math.floor(c.progression.xp)} / ${c.progression.required}`;
   const portrait=el('portrait').querySelector('span')!;
@@ -84,12 +94,14 @@ el('resume').onclick=()=>{manualPause=false;backgroundPause=false;syncPause();};
 el('help').onclick=()=>{helpOpen=true;el('help-overlay').hidden=false;syncPause();};
 el('close-help').onclick=()=>{helpOpen=false;el('help-overlay').hidden=true;syncPause();};
 el('reset').onclick=()=>{scene.restartTraining();manualPause=false;backgroundPause=false;syncPause();};
-function switchMode(lane:boolean){skillDrag=null;scene.startMode(lane);manualPause=false;backgroundPause=false;syncPause();}
-el('mode').onclick=()=>switchMode(!scene.match);
-el('rematch').onclick=()=>switchMode(true);
-el('back-training').onclick=()=>switchMode(false);
+type PlayMode='training'|'lane'|'battlefield';
+function switchMode(mode:PlayMode){skillDrag=null;if(mode==='battlefield')scene.startBattlefield();else scene.startMode(mode==='lane');manualPause=false;backgroundPause=false;syncPause();}
+el('mode').onclick=()=>switchMode(scene.session?'training':'lane');
+el('battlefield-mode').onclick=()=>switchMode('battlefield');
+el('rematch').onclick=()=>switchMode(scene.battlefield?'battlefield':'lane');
+el('back-training').onclick=()=>switchMode('training');
 el('rally').onclick=()=>scene.rally();
-el('front-camera').onclick=()=>{if(scene.match){const front=Math.max(600,...scene.match.units.filter(u=>u.team==='blue'&&u.kind==='minion'&&u.alive).map(u=>u.x));scene.cameras.main.centerOn(front,500);}};
+el('front-camera').onclick=()=>{if(scene.battlefield)scene.cameras.main.centerOn(800,500);else if(scene.match){const front=Math.max(600,...scene.match.units.filter(u=>u.team==='blue'&&u.kind==='minion'&&u.alive).map(u=>u.x));scene.cameras.main.centerOn(front,500);}};
 el('center').onclick=el('portrait').onclick=()=>scene.centerHero();
 el('retaliation').onclick=()=>{if(!scene.blocked)scene.squad.setRetaliation(!scene.squad.retaliation);};
 el('recall').onclick=()=>{if(!scene.blocked&&scene.combat.recall())scene.notify('귀환 중 · 이동이나 스킬을 사용하면 취소됩니다.');};
@@ -118,4 +130,11 @@ document.addEventListener('contextmenu',e=>e.preventDefault());
 window.addEventListener('keydown',e=>{if(e.repeat)return;if(e.code==='Space'){e.preventDefault();manualPause=!manualPause;syncPause();}if(e.code==='Escape'){skillDrag=null;scene.cancelGesture();}});
 
 // Read-only diagnostics for repeatable browser verification, no mutation shortcuts.
-Object.defineProperty(window,'leagueDebug',{get:()=>({visuals:scene.visualCounts,mode:scene.match?'lane':'training',match:scene.match?{kills:{...scene.match.kills},opponents:scene.match.opponents.map(c=>({id:c.profile.id,visualId:c.visualId,hero:{...c.hero},level:c.progression.level,xp:c.progression.xp,command:c.command.kind,life:c.life,equipment:{weapon:c.equipment.weapon,armor:c.equipment.armor},state:scene.match!.ai.find(a=>a.actor===c)?.state})),redGold:scene.match.economy.red.gold,elapsed:scene.match.elapsed,wave:scene.match.wave,result:scene.match.result,gold:scene.match.economy.blue.gold,earnedGold:scene.match.economy.blue.earned,units:scene.match.units.map(u=>({...u}))}:null,selected:scene.combat.profile.id,retaliation:scene.squad.retaliation,skillCooldowns:{...scene.combat.cooldown},respawn:scene.combat.respawnRemaining,stacks:scene.combat.abilities.stacks,pet:scene.combat.abilities.pet?{...scene.combat.abilities.pet}:null,members:scene.squad.members.map(c=>({id:c.profile.id,level:c.progression.level,xp:c.progression.xp,anchor:{...c.anchor},hero:{...c.hero},command:c.command.kind,damage:c.damage,elapsed:c.elapsed})),ready:document.body.dataset.ready==='true',paused:scene.paused,hero:{...scene.combat.hero},anchor:{...scene.combat.anchor},equipment:{weapon:scene.combat.equipment.weapon,armor:scene.combat.equipment.armor,potion:scene.combat.equipment.potion,active:scene.combat.equipment.active?{...scene.combat.equipment.active}:null},ranks:{...scene.combat.ranks},level:scene.combat.progression.level,xp:scene.combat.progression.xp,command:scene.combat.command.kind,damage:scene.combat.damage,dashCooldown:scene.combat.cooldown.dash,elapsed:scene.combat.elapsed,enemies:scene.combat.enemies.map(e=>({...e})),camera:{x:scene.cameras.main?.scrollX??0,y:scene.cameras.main?.scrollY??0},completed:{...scene.combat.completed}})});
+Object.defineProperty(window,'leagueDebug',{get:()=>{
+  const session=scene.session,lane=scene.match,battlefield=scene.battlefield;
+  return {visuals:scene.visualCounts,mode:battlefield?'battlefield':lane?'lane':'training',
+    match:session?{kills:{...session.kills},opponents:session.opponents.map(c=>({id:c.profile.id,visualId:c.visualId,hero:{...c.hero},level:c.progression.level,xp:c.progression.xp,command:c.command.kind,life:c.life,equipment:{weapon:c.equipment.weapon,armor:c.equipment.armor},state:lane?.ai.find(a=>a.actor===c)?.state})),redGold:session.economy.red.gold,elapsed:session.elapsed,wave:session.wave,result:session.result,gold:session.economy.blue.gold,earnedGold:session.economy.blue.earned,units:session.units.map(u=>({...u}))}:null,
+    selected:scene.combat.profile.id,retaliation:scene.squad.retaliation,skillCooldowns:{...scene.combat.cooldown},respawn:scene.combat.respawnRemaining,stacks:scene.combat.abilities.stacks,pet:scene.combat.abilities.pet?{...scene.combat.abilities.pet}:null,
+    members:scene.squad.members.map(c=>({id:c.profile.id,level:c.progression.level,xp:c.progression.xp,anchor:{...c.anchor},hero:{...c.hero},command:c.command.kind,damage:c.damage,elapsed:c.elapsed})),ready:document.body.dataset.ready==='true',paused:scene.paused,hero:{...scene.combat.hero},anchor:{...scene.combat.anchor},
+    equipment:{weapon:scene.combat.equipment.weapon,armor:scene.combat.equipment.armor,potion:scene.combat.equipment.potion,active:scene.combat.equipment.active?{...scene.combat.equipment.active}:null},ranks:{...scene.combat.ranks},level:scene.combat.progression.level,xp:scene.combat.progression.xp,command:scene.combat.command.kind,damage:scene.combat.damage,dashCooldown:scene.combat.cooldown.dash,elapsed:scene.combat.elapsed,enemies:scene.combat.enemies.map(e=>({...e})),camera:{x:scene.cameras.main?.scrollX??0,y:scene.cameras.main?.scrollY??0},completed:{...scene.combat.completed}};
+}});

@@ -11,7 +11,7 @@ export function setupShop(scene:ArenaScene){
   select.onchange=()=>scene.selectChampion(Number(select.value));
   const close=()=>{panel.hidden=true;node('shop-toggle').focus();};
   node('shop-close').onclick=close;
-  node('shop-toggle').onclick=()=>{if(!scene.match||scene.blocked)return;scene.cancelGesture();panel.hidden=!panel.hidden;if(!panel.hidden)select.focus();};
+  node('shop-toggle').onclick=()=>{if(!scene.session||scene.blocked)return;scene.cancelGesture();panel.hidden=!panel.hidden;if(!panel.hidden)select.focus();};
   node('potion-use').onclick=()=>{if(!scene.blocked&&scene.combat.usePotion())scene.notify('포션 사용 · 5초 동안 회복합니다.');};
   panel.addEventListener('keydown',e=>{
     if(e.key==='Escape'){close();return;}
@@ -24,10 +24,10 @@ export function setupShop(scene:ArenaScene){
   for(const item of offers){
     const b=node<HTMLButtonElement>('buy-'+item);
     const icon=ASSETS.icons['item.'+item];if(icon){const img=new Image();img.src=icon;img.alt='';img.onload=()=>b.prepend(img);}
-    b.onclick=()=>{if(scene.blocked)return;const m=scene.match,c=scene.combat;if(m?.purchase(c,item))node('shop-status').textContent=`${c.profile.name} 구매 완료`;else node('shop-status').textContent=m?.shopReason(c,item)??'경기 모드 전용';};
+    b.onclick=()=>{if(scene.blocked)return;const m=scene.session,c=scene.combat;if(m?.purchase(c,item))node('shop-status').textContent=`${c.profile.name} 구매 완료`;else node('shop-status').textContent=m?.shopReason(c,item)??'경기 모드 전용';};
   }
   return ()=>{
-    const c=scene.combat,m=scene.match,e=c.equipment;
+    const c=scene.combat,m=scene.session,e=c.equipment;
     node('inventory').hidden=!m;
     if(!m||scene.blocked)panel.hidden=true;
     node<HTMLButtonElement>('shop-toggle').disabled=scene.blocked;

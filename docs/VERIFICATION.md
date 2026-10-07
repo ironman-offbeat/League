@@ -91,3 +91,14 @@ The initial PR run passed 19 browser cases but the new WebKit wave check exceede
 - The old undefended siege victory test explicitly disables enemy champions to isolate building rules. Default-mode AI matches have their own combat/growth/end-freeze checks.
 - Exact executed final results are in this commit's Verify game workflow. Physical-device Korean font/rendering and difficulty remain user QA.
 - The first AI CI run passed 28 browser cases but WebKit's live-shop clock advanced only 1.5 simulation seconds in 15 wall seconds. Phaser's startup smoothing replaces slow frames with historical 16ms deltas before our own fixed-step accumulator. Disabled that duplicate smoothing; the existing 100ms foreground cap, pause/visibility guards and unchanged shop-progress assertion remain in place. Final CI must verify this correction.
+
+
+## Three-lane champion runtime and playable mode — 2026-10-07
+
+- 09c-1 PR #14 reuses the production Combat/Squad path inside BattlefieldMatch instead of creating a second champion combat implementation.
+- Role starts are separate from fountain spawn: Renekton Top, Annie Mid, Ashe Bottom and Amumu Jungle begin at role positions while recall/respawn return to the correct team base.
+- Shared target arrays are retained when three lane waves spawn, and regression coverage verifies ordinary champion attacks can damage newly spawned battlefield minions.
+- Team economy, purchases, champion/minion/building rewards and minion/tower attacks against champions are connected without changing LaneMatch.
+- PR #14 final Verify game run 37571848755 passed 126 simulation cases, TypeScript/production build, desktop Chromium, mobile Chromium and mobile WebKit before squash merge.
+- 09c-2 adds a separate browser-accessible three-lane session while preserving the existing training and one-lane buttons. Browser coverage checks mode entry, 20 initial buildings, four opposing champions, distinct role starts, real drag movement, full-map camera control and clean return to training.
+- Full-map fog/bush rules, strategic enemy AI, jungle camps and champion obstacle/path commands are deliberately not claimed by this increment. Exact 09c-2 execution results are recorded by its final Verify game workflow.

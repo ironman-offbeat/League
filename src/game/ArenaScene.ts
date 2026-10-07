@@ -1,6 +1,8 @@
 import { VisualDirector } from '../render/VisualDirector.ts';
 import { actorVisual, motionFor } from '../render/assets.ts';
 import { LaneMatch, LANE } from './LaneMatch.ts';
+import { BattlefieldMatch, BATTLEFIELD } from './BattlefieldMatch.ts';
+import { BATTLEFIELD_NAVIGATION, battlefieldLaneRoute } from './navigation.ts';
 import Phaser from 'phaser';
 import type { SkillSlot } from './skillConfig.ts';
 import { SKILLS } from './skillConfig.ts';
@@ -11,8 +13,10 @@ import type { Point } from './config.ts';
 export class ArenaScene extends Phaser.Scene {
   squad:Squad = new Squad(true);
   get match(){return this.squad instanceof LaneMatch?this.squad:null;}
-  get champions(){return this.match?.actors??this.squad.members;}
-  get blocked(){return this.paused||!!this.match?.result;}
+  get battlefield(){return this.squad instanceof BattlefieldMatch?this.squad:null;}
+  get session(){return this.match??this.battlefield;}
+  get champions(){return this.session?.actors??this.squad.members;}
+  get blocked(){return this.paused||!!this.session?.result;}
   private visuals?:VisualDirector;
   private lastPositions=new Map<string,Point>();
   private poses=new Map<string,{kind:'cast'|'hurt';until:number}>();
@@ -76,16 +80,20 @@ export class ArenaScene extends Phaser.Scene {
   setPaused(value: boolean) { this.paused=value; this.visuals?.setPaused(this.blocked); this.accumulator=0; this.cancelGesture(); this.onFrame(this); }
   cancelGesture() { this.gesture=null; this.aimSlot=null; this.aim=null; }
   centerHero() { this.cameras.main.centerOn(this.combat.hero.x+100,this.combat.hero.y-25); }
-  startMode(lane:boolean) {
+  private replaceSquad(next:Squad,notice:string){
     this.visuals?.clear();this.lastPositions.clear();this.poses.clear();
-    this.squad=lane?new LaneMatch():new Squad(true);
-    this.accumulator=0;this.cancelGesture();
+    this.squad=next;this.accumulator=0;this.cancelGesture();
     this.labels.forEach(label=>label.destroy());
     this.labels=this.combat.enemies.map(()=>this.add.text(0,0,'',{fontFamily:'Malgun Gothic, sans-serif',fontSize:'11px',color:'#e4ddbd',backgroundColor:'#18241dc0',padding:{x:5,y:3}}).setOrigin(.5).setDepth(7));
-    this.drawMap();this.centerHero();
-    this.notify(lane?'적 챔피언 4명과 교전합니다 · 미니언과 함께 전진하세요.':'연습장을 초기화했습니다.');
+    this.drawMap();this.centerHero();this.notify(notice);
   }
-  restartTraining(){this.startMode(!!this.match);}
+  startMode(lane:boolean){
+    this.replaceSquad(lane?new LaneMatch():new Squad(true),lane?'적 챔피언 4명과 교전합니다 · 미니언과 함께 전진하세요.':'연습장을 초기화했습니다.');
+  }
+  startBattlefield(){
+    this.replaceSquad(new BattlefieldMatch(),'3라인 전장 · 역할별 시작 위치에서 네 챔피언을 직접 지휘합니다.');
+  }
+  restartTraining(){if(this.battlefield)this.startBattlefield();else this.startMode(!!this.match);}
   rally(){
     if(!this.match||this.blocked)return;
     const front=Math.max(600,...this.match.units.filter(u=>u.team==='blue'&&u.kind==='minion'&&u.alive).map(u=>u.x-60));
@@ -125,12 +133,12 @@ export class ArenaScene extends Phaser.Scene {
     this.renderActors();
     this.renderGuide();
     for(const owner of this.champions)for(const event of owner.events.splice(0)) {
-      const enemyOwner=this.match?.opponents.includes(owner)??false;
-      if(enemyOwner){
-        const ownerTarget=this.match!.championTargets.find(t=>t.id===owner.profile.id);
+      const enemyOwner=this.session?.opponents.includes(owner)??false;
+      if(enemyOwner&&this.match){
+        const ownerTarget=this.match.championTargets.find(t=>t.id===owner.profile.id);
         const sourceEvent=event.entityId===owner.profile.id||event.kind==='cast'||event.kind==='slash'||event.kind==='ultimate'||event.kind==='levelUp'||event.kind==='heal';
-        if(sourceEvent&&(!ownerTarget||!this.match!.canSee('blue',ownerTarget)))continue;
-        if(!sourceEvent&&!this.match!.pointVisible('blue',event.point))continue;
+        if(sourceEvent&&(!ownerTarget||!this.match.canSee('blue',ownerTarget)))continue;
+        if(!sourceEvent&&!this.match.pointVisible('blue',event.point))continue;
       }
       if(event.entityId&&(event.kind==='cast'||event.kind==='damage'))this.poses.set(event.entityId,{kind:event.kind==='cast'?'cast':'hurt',until:this.combat.elapsed+(this.visuals?.clipDuration(actorVisual(this.champions.find(c=>c.profile.id===event.entityId)?.visualId??event.entityId),event.kind==='cast'?'cast':'hurt')??.3)});
       const custom=event.visual?this.visuals?.effect(event.visual,event.point):false;
@@ -151,8 +159,9 @@ export class ArenaScene extends Phaser.Scene {
   }
   private renderActors() {
     const g=this.actors;g.clear();
-    this.visuals?.draw('map',this.match?'map.lane':'map.training',{x:RULES.world.width/2,y:RULES.world.height/2},'idle',0,1);
+    if(!this.battlefield)this.visuals?.draw('map',this.match?'map.lane':'map.training',{x:RULES.world.width/2,y:RULES.world.height/2},'idle',0,1);
     if(this.match)this.renderLane();
+    else if(this.battlefield)this.renderBattlefield();
     else this.combat.enemies.forEach((e,i)=>{
       const label=this.labels[i];label.setVisible(this.combat.canSee(e));if(!this.combat.canSee(e))return;label.setPosition(e.x,e.y-69);
       label.setText(e.alive?(e.stunned>0?'기절':e.rooted>0?'속박':e.slowRemaining>0?'둔화':e.marked>0?'저주':'훈련 대상'): `${Math.max(1,Math.ceil(e.respawn))}초 후 재생성`);
@@ -171,7 +180,7 @@ export class ArenaScene extends Phaser.Scene {
       g.lineStyle(2,0xef856b,.65);g.lineBetween(attack.enemy.x,attack.enemy.y,p.x,p.y);g.strokeCircle(p.x,p.y,29);
     }
     for (const member of this.champions) {
-      const enemyMember=this.match?.opponents.includes(member)??false;
+      const enemyMember=this.session?.opponents.includes(member)??false;
       const visiblePoint=(p:Point)=>!enemyMember||!this.match||this.match.pointVisible('blue',p);
       const a=member.abilities;
       for(const m of a.missiles){if(!visiblePoint(m.point))continue;if(this.visuals?.draw(m,`projectile.${member.profile.kit}.${m.kind}`,m.point,'walk',Math.atan2(m.direction.y,m.direction.x)))continue;g.fillStyle(member.profile.color);g.fillCircle(m.point.x,m.point.y,m.kind==='arrow'?10:6);}
@@ -185,7 +194,7 @@ export class ArenaScene extends Phaser.Scene {
       for (const p of member.projectiles) { if(!visiblePoint(p))continue;if(this.visuals?.draw(p,`projectile.${member.visualId}.basic`,p,'walk',Math.atan2(p.target.y-p.y,p.target.x-p.x)))continue;g.fillStyle(member.profile.color); g.fillCircle(p.x,p.y,5); }
     }
     for (const c of this.champions) {
-    const enemy=this.match?.opponents.includes(c)??false;
+    const enemy=this.session?.opponents.includes(c)??false;
     const target=enemy?this.match?.championTargets.find(t=>t.id===c.profile.id):undefined;
     if(enemy&&target&&!this.match!.canSee('blue',target))continue;
     const h=c.hero,last=this.lastPositions.get(c.profile.id),pose=this.poses.get(c.profile.id);
@@ -256,6 +265,36 @@ export class ArenaScene extends Phaser.Scene {
     for(const id of this.lastPositions.keys())if(!liveIds.has(id))this.lastPositions.delete(id);
     for(const shot of match.towerShots.values()){g.lineStyle(3,0xef9273,.8);g.lineBetween(shot.tower.x,shot.tower.y,shot.target.point.x,shot.target.point.y);g.strokeCircle(shot.target.point.x,shot.target.point.y,25);}
   }
+  private renderBattlefield(){
+    const g=this.actors,match=this.battlefield!;
+    for(const u of match.units){
+      const color=u.team==='blue'?0x79b9cc:0xd98b78;
+      const previous=this.lastPositions.get(u.id);
+      const moving=!!previous&&distance(previous,u)>.01;
+      const attacking=u.attackCooldown>0;
+      const custom=this.visuals?.draw(u,`unit.${u.team}.${u.role}`,u,!u.alive?'death':moving?'walk':attacking?'attack':'idle',u.team==='blue'?0:Math.PI);
+      this.lastPositions.set(u.id,{x:u.x,y:u.y});
+      if(u.kind==='building'){
+        if(!u.alive){g.lineStyle(2,color,.25);g.strokeCircle(u.x,u.y,25);continue;}
+        if(u.role==='outer'||u.role==='inner'){g.lineStyle(1,color,.18);g.strokeCircle(u.x,u.y,BATTLEFIELD.structures[u.role].range);}
+        if(!custom){
+          if(u.role==='nexus'){g.fillStyle(color,.28);g.fillCircle(u.x,u.y,46);g.fillStyle(color);g.fillCircle(u.x,u.y,27);g.lineStyle(3,0xe7ddb4,.7);g.strokeCircle(u.x,u.y,34);}
+          else if(u.role==='inhibitor'){g.fillStyle(color,.85);g.fillRoundedRect(u.x-22,u.y-22,44,44,8);g.lineStyle(3,0xe7ddb4,.65);g.strokeCircle(u.x,u.y,30);}
+          else {const size=u.role==='outer'?32:27;g.fillStyle(color,.25);g.fillCircle(u.x,u.y,size+10);g.fillStyle(color);g.fillRoundedRect(u.x-size*.55,u.y-size,size*1.1,size*2,7);}
+        }
+        if(u.protected){g.lineStyle(3,0xebe3b6,.75);g.strokeCircle(u.x,u.y,u.role==='nexus'?54:40);}
+        g.fillStyle(0x112822);g.fillRect(u.x-38,u.y-52,76,7);g.fillStyle(color);g.fillRect(u.x-37,u.y-51,74*Math.max(0,u.hp/u.maxHp),5);
+      }else if(u.alive){
+        const radius=u.role==='siege'?13:u.role==='melee'?9:7;
+        if(!custom){g.fillStyle(0x10251d,.65);g.fillEllipse(u.x+3,u.y+8,radius*2.5,11);g.fillStyle(color);g.fillCircle(u.x,u.y,radius);g.lineStyle(2,0xd9d6ae,.65);g.lineBetween(u.x,u.y,u.x+(u.team==='blue'?1:-1)*(radius+5),u.y);}
+        g.fillStyle(0x142a22);g.fillRect(u.x-14,u.y-20,28,4);g.fillStyle(color);g.fillRect(u.x-14,u.y-20,28*Math.max(0,u.hp/u.maxHp),4);
+      }
+      if(this.combat.command.kind==='attack'&&this.combat.command.targetId===u.id&&u.alive){g.lineStyle(2,0xffdf9c);g.strokeCircle(u.x,u.y,u.kind==='building'?44:21);}
+    }
+    const liveIds=new Set([...match.units.map(u=>u.id),...match.actors.map(c=>c.profile.id)]);
+    for(const id of this.lastPositions.keys())if(!liveIds.has(id))this.lastPositions.delete(id);
+  }
+
   private renderFog(){
     const g=this.fog;g.clear();const match=this.match;if(!match)return;
     const cell=LANE.vision.cell;
@@ -277,6 +316,29 @@ export class ArenaScene extends Phaser.Scene {
   private drawMap() {
     this.mapLayer?.destroy(true);this.mapLayer=this.add.container(0,0).setDepth(0);
     const g=this.add.graphics();this.mapLayer.add(g);const w=RULES.world.width,h=RULES.world.height;
+    if(this.battlefield){
+      g.fillStyle(0x24392f);g.fillRect(0,0,w,h);
+      for(const lane of ['top','mid','bottom'] as const){
+        const route=battlefieldLaneRoute(lane,'blue');
+        g.lineStyle(116,0x555c49,.5);
+        for(let i=1;i<route.length;i++)g.lineBetween(route[i-1].x,route[i-1].y,route[i].x,route[i].y);
+        g.lineStyle(82,0x77765d,.4);
+        for(let i=1;i<route.length;i++)g.lineBetween(route[i-1].x,route[i-1].y,route[i].x,route[i].y);
+        g.lineStyle(2,0xb4ae7b,.24);
+        for(let i=1;i<route.length;i++)g.lineBetween(route[i-1].x,route[i-1].y,route[i].x,route[i].y);
+      }
+      const north=BATTLEFIELD_NAVIGATION.node('river-north').point,south=BATTLEFIELD_NAVIGATION.node('river-south').point;
+      g.lineStyle(105,0x315d64,.3);g.lineBetween(north.x,north.y,south.x,south.y);
+      for(const id of ['blue-jungle-top','blue-jungle-bottom','red-jungle-top','red-jungle-bottom']){
+        const p=BATTLEFIELD_NAVIGATION.node(id).point;g.fillStyle(0x173b2a,.7);g.fillCircle(p.x,p.y,64);g.lineStyle(2,0x4d704d,.4);g.strokeCircle(p.x,p.y,64);
+      }
+      for(const team of ['blue','red'] as const){
+        const p=BATTLEFIELD_NAVIGATION.node(team==='blue'?'blue-base':'red-base').point;
+        const color=team==='blue'?0x345e60:0x664c48;g.fillStyle(color,.9);g.fillCircle(p.x,p.y,92);g.lineStyle(3,0xc4bc88,.45);g.strokeCircle(p.x,p.y,78);
+      }
+      this.mapLayer.add(this.add.text(800,500,'THREE LANE BATTLEFIELD',{fontFamily:'Georgia,serif',fontSize:'15px',color:'#abb28b'}).setOrigin(.5).setAlpha(.35));
+      return;
+    }
     if(this.match){
       g.fillStyle(0x263d32);g.fillRect(0,0,w,h);
       g.fillStyle(0x62604a);g.fillRoundedRect(60,LANE.y-110,w-120,220,65);
