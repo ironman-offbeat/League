@@ -53,7 +53,7 @@ scene.onFrame=s=>{
   const fury=c.profile.kit==='fury';
   el('champion-name').textContent=c.profile.name;
   el('champion-status').textContent=`Lv. ${c.progression.level}${c.profile.kit==='flame'?` · 불꽃 ${c.abilities.stacks}/3`:''}`;
-  el('xp-track').hidden=!match;
+  el('xp-track').hidden=!session;
   el('xp-bar').style.width=`${c.progression.capped?100:c.progression.xp/c.progression.required*100}%`;
   el('xp-text').textContent=c.progression.capped?'최대 레벨':`XP ${Math.floor(c.progression.xp)} / ${c.progression.required}`;
   const portrait=el('portrait').querySelector('span')!;
@@ -94,12 +94,14 @@ el('resume').onclick=()=>{manualPause=false;backgroundPause=false;syncPause();};
 el('help').onclick=()=>{helpOpen=true;el('help-overlay').hidden=false;syncPause();};
 el('close-help').onclick=()=>{helpOpen=false;el('help-overlay').hidden=true;syncPause();};
 el('reset').onclick=()=>{scene.restartTraining();manualPause=false;backgroundPause=false;syncPause();};
-function switchMode(lane:boolean){skillDrag=null;scene.startMode(lane);manualPause=false;backgroundPause=false;syncPause();}
-el('mode').onclick=()=>switchMode(!scene.match);
-el('rematch').onclick=()=>switchMode(true);
-el('back-training').onclick=()=>switchMode(false);
+type PlayMode='training'|'lane'|'battlefield';
+function switchMode(mode:PlayMode){skillDrag=null;if(mode==='battlefield')scene.startBattlefield();else scene.startMode(mode==='lane');manualPause=false;backgroundPause=false;syncPause();}
+el('mode').onclick=()=>switchMode(scene.session?'training':'lane');
+el('battlefield-mode').onclick=()=>switchMode('battlefield');
+el('rematch').onclick=()=>switchMode(scene.battlefield?'battlefield':'lane');
+el('back-training').onclick=()=>switchMode('training');
 el('rally').onclick=()=>scene.rally();
-el('front-camera').onclick=()=>{if(scene.match){const front=Math.max(600,...scene.match.units.filter(u=>u.team==='blue'&&u.kind==='minion'&&u.alive).map(u=>u.x));scene.cameras.main.centerOn(front,500);}};
+el('front-camera').onclick=()=>{if(scene.battlefield)scene.cameras.main.centerOn(800,500);else if(scene.match){const front=Math.max(600,...scene.match.units.filter(u=>u.team==='blue'&&u.kind==='minion'&&u.alive).map(u=>u.x));scene.cameras.main.centerOn(front,500);}};
 el('center').onclick=el('portrait').onclick=()=>scene.centerHero();
 el('retaliation').onclick=()=>{if(!scene.blocked)scene.squad.setRetaliation(!scene.squad.retaliation);};
 el('recall').onclick=()=>{if(!scene.blocked&&scene.combat.recall())scene.notify('귀환 중 · 이동이나 스킬을 사용하면 취소됩니다.');};
@@ -128,4 +130,11 @@ document.addEventListener('contextmenu',e=>e.preventDefault());
 window.addEventListener('keydown',e=>{if(e.repeat)return;if(e.code==='Space'){e.preventDefault();manualPause=!manualPause;syncPause();}if(e.code==='Escape'){skillDrag=null;scene.cancelGesture();}});
 
 // Read-only diagnostics for repeatable browser verification, no mutation shortcuts.
-Object.defineProperty(window,'leagueDebug',{get:()=>({visuals:scene.visualCounts,mode:scene.match?'lane':'training',match:scene.match?{kills:{...scene.match.kills},opponents:scene.match.opponents.map(c=>({id:c.profile.id,visualId:c.visualId,hero:{...c.hero},level:c.progression.level,xp:c.progression.xp,command:c.command.kind,life:c.life,equipment:{weapon:c.equipment.weapon,armor:c.equipment.armor},state:scene.match!.ai.find(a=>a.actor===c)?.state})),redGold:scene.match.economy.red.gold,elapsed:scene.match.elapsed,wave:scene.match.wave,result:scene.match.result,gold:scene.match.economy.blue.gold,earnedGold:scene.match.economy.blue.earned,units:scene.match.units.map(u=>({...u}))}:null,selected:scene.combat.profile.id,retaliation:scene.squad.retaliation,skillCooldowns:{...scene.combat.cooldown},respawn:scene.combat.respawnRemaining,stacks:scene.combat.abilities.stacks,pet:scene.combat.abilities.pet?{...scene.combat.abilities.pet}:null,members:scene.squad.members.map(c=>({id:c.profile.id,level:c.progression.level,xp:c.progression.xp,anchor:{...c.anchor},hero:{...c.hero},command:c.command.kind,damage:c.damage,elapsed:c.elapsed})),ready:document.body.dataset.ready==='true',paused:scene.paused,hero:{...scene.combat.hero},anchor:{...scene.combat.anchor},equipment:{weapon:scene.combat.equipment.weapon,armor:scene.combat.equipment.armor,potion:scene.combat.equipment.potion,active:scene.combat.equipment.active?{...scene.combat.equipment.active}:null},ranks:{...scene.combat.ranks},level:scene.combat.progression.level,xp:scene.combat.progression.xp,command:scene.combat.command.kind,damage:scene.combat.damage,dashCooldown:scene.combat.cooldown.dash,elapsed:scene.combat.elapsed,enemies:scene.combat.enemies.map(e=>({...e})),camera:{x:scene.cameras.main?.scrollX??0,y:scene.cameras.main?.scrollY??0},completed:{...scene.combat.completed}})});
+Object.defineProperty(window,'leagueDebug',{get:()=>{
+  const session=scene.session,lane=scene.match,battlefield=scene.battlefield;
+  return {visuals:scene.visualCounts,mode:battlefield?'battlefield':lane?'lane':'training',
+    match:session?{kills:{...session.kills},opponents:session.opponents.map(c=>({id:c.profile.id,visualId:c.visualId,hero:{...c.hero},level:c.progression.level,xp:c.progression.xp,command:c.command.kind,life:c.life,equipment:{weapon:c.equipment.weapon,armor:c.equipment.armor},state:lane?.ai.find(a=>a.actor===c)?.state})),redGold:session.economy.red.gold,elapsed:session.elapsed,wave:session.wave,result:session.result,gold:session.economy.blue.gold,earnedGold:session.economy.blue.earned,units:session.units.map(u=>({...u}))}:null,
+    selected:scene.combat.profile.id,retaliation:scene.squad.retaliation,skillCooldowns:{...scene.combat.cooldown},respawn:scene.combat.respawnRemaining,stacks:scene.combat.abilities.stacks,pet:scene.combat.abilities.pet?{...scene.combat.abilities.pet}:null,
+    members:scene.squad.members.map(c=>({id:c.profile.id,level:c.progression.level,xp:c.progression.xp,anchor:{...c.anchor},hero:{...c.hero},command:c.command.kind,damage:c.damage,elapsed:c.elapsed})),ready:document.body.dataset.ready==='true',paused:scene.paused,hero:{...scene.combat.hero},anchor:{...scene.combat.anchor},
+    equipment:{weapon:scene.combat.equipment.weapon,armor:scene.combat.equipment.armor,potion:scene.combat.equipment.potion,active:scene.combat.equipment.active?{...scene.combat.equipment.active}:null},ranks:{...scene.combat.ranks},level:scene.combat.progression.level,xp:scene.combat.progression.xp,command:scene.combat.command.kind,damage:scene.combat.damage,dashCooldown:scene.combat.cooldown.dash,elapsed:scene.combat.elapsed,enemies:scene.combat.enemies.map(e=>({...e})),camera:{x:scene.cameras.main?.scrollX??0,y:scene.cameras.main?.scrollY??0},completed:{...scene.combat.completed}};
+}});
