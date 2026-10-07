@@ -18,6 +18,8 @@ export class TeamVision {
   private explored:Record<VisionTeam,Set<number>>={blue:new Set(),red:new Set()};
   private exploredSamples:Record<VisionTeam,Set<string>>={blue:new Set(),red:new Set()};
   private sightings:Record<VisionTeam,Map<string,Sighting>>={blue:new Map(),red:new Map()};
+  private knownSubjects=new Set<string>();
+  private visibleSubjects:Record<VisionTeam,Set<string>>={blue:new Set(),red:new Set()};
   private columns:number;
   constructor(width:number,height:number,bushes:readonly Bush[]=[],cellSize=40){
     if(!Number.isFinite(width)||!Number.isFinite(height)||!Number.isFinite(cellSize)||width<=0||height<=0||cellSize<=0)
@@ -40,12 +42,19 @@ export class TeamVision {
   pointVisible(team:VisionTeam,p:Point){
     return this.inside(p)&&this.sources.some(s=>s.team===team&&this.covers(s,p));
   }
-  canSee(team:VisionTeam,subject:VisionSubject){
+  private subjectKey(subject:VisionSubject){return `${subject.id}:${subject.generation}`;}
+  private detects(team:VisionTeam,subject:VisionSubject){
     if(!subject.alive||!this.inside(subject))return false;
     if(subject.team===team)return true;
     const bush=this.bushAt(subject);
     return this.sources.some(s=>s.team===team&&this.covers(s,subject)&&
       (!bush||subject.exposed||s.revealsBush||this.bushAt(s)===bush));
+  }
+  canSee(team:VisionTeam,subject:VisionSubject){
+    if(!subject.alive||!this.inside(subject))return false;
+    if(subject.team===team)return true;
+    const key=this.subjectKey(subject);
+    return this.knownSubjects.has(key)?this.visibleSubjects[team].has(key):this.detects(team,subject);
   }
   terrain(team:VisionTeam,p:Point):TerrainVisibility{
     if(!this.inside(p))return 'unexplored';
@@ -77,12 +86,15 @@ export class TeamVision {
         if(this.covers(source,center))this.explored[source.team].add(y*this.columns+x);
       }
     }
+    this.knownSubjects.clear();this.visibleSubjects.blue.clear();this.visibleSubjects.red.clear();
+    for(const subject of subjects)this.knownSubjects.add(this.subjectKey(subject));
     for(const team of ['blue','red'] as const)for(const subject of subjects){
       if(subject.team===team)continue;
-      if(this.canSee(team,subject))this.sightings[team].set(subject.id,{x:subject.x,y:subject.y,generation:subject.generation,seenAt:time});
+      const visible=this.detects(team,subject),key=this.subjectKey(subject);
+      if(visible){this.visibleSubjects[team].add(key);this.sightings[team].set(subject.id,{x:subject.x,y:subject.y,generation:subject.generation,seenAt:time});}
       // Hidden death/respawn must not update or erase the opponent's memory.
-      else if(!subject.alive&&this.canSee(team,{...subject,alive:true}))this.sightings[team].delete(subject.id);
+      else if(!subject.alive&&this.detects(team,{...subject,alive:true}))this.sightings[team].delete(subject.id);
     }
   }
-  reset(){this.sources=[];for(const team of ['blue','red'] as const){this.explored[team].clear();this.exploredSamples[team].clear();this.sightings[team].clear();}}
+  reset(){this.sources=[];this.knownSubjects.clear();for(const team of ['blue','red'] as const){this.explored[team].clear();this.exploredSamples[team].clear();this.sightings[team].clear();this.visibleSubjects[team].clear();}}
 }
