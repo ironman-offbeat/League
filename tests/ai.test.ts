@@ -61,7 +61,7 @@ test('both towers defend allied champions even when a shield absorbs the attack'
 });
 test('AI waits for the first wave, then advances without extra income or stats',()=>{
  const m=new LaneMatch();step(m,9);assert.ok(m.ai.every(b=>b.state==='waiting'));assert.ok(m.opponents.every(c=>distance(c.hero,c.profile.spawn)===0));assert.equal(m.economy.red.gold,200);
- step(m,6);assert.ok(m.opponents.every(c=>c.hero.x<c.profile.spawn.x-100));near(m.economy.red.gold,210);assert.ok(m.opponents.every(c=>c.progression.level===1));
+ step(m,6);assert.ok(m.opponents.every(c=>distance(c.hero,c.profile.spawn)>100));near(m.economy.red.gold,210);assert.ok(m.opponents.every(c=>c.progression.level===1));
 });
 test('AI retreat is latched until fountain recovery, recall is not restarted every decision',()=>{
  const m=new LaneMatch({ai:false}),c=m.opponents[0],brain=new LaneAI(m,c,0);m.ai=[brain];c.hero.x=1000;c.hero.y=750;c.hero.hp=200;c.equipment.potion=null;
@@ -73,16 +73,18 @@ test('AI uses a potion and runs away before recalling while nearby visible enemi
  m.refreshVision();brain.step(.3);assert.equal(brain.state,'retreat');assert.equal(c.command.kind,'move');assert.equal(c.equipment.potion,null);assert.ok(c.equipment.active);assert.deepEqual(c.anchor,c.profile.spawn);
 });
 test('low-health AI escapes tower range instead of repeatedly recalling under fire',()=>{
- const m=new LaneMatch({ai:false}),c=m.opponents[0],brain=new LaneAI(m,c,0);c.hero.x=680;c.hero.y=500;c.hero.hp=150;
+ const m=new LaneMatch({ai:false}),c=m.opponents[0],brain=new LaneAI(m,c,0),tower=m.structure('blue','tower',m.laneOf(c));
+ c.hero.x=tower.x+100;c.hero.y=tower.y;c.hero.hp=150;
  m.refreshVision();brain.step(.3);assert.equal(brain.state,'retreat');assert.equal(c.command.kind,'move');assert.deepEqual(c.anchor,c.profile.spawn);
 });
 test('AI respects visibility, preserves attack windup and does not chase unescorted tower targets',()=>{
- const m=new LaneMatch({ai:false}),c=m.opponents[1],enemy=m.members[0],brain=new LaneAI(m,c,1);m.elapsed=20;
- // Mid-lane enemy is inside south bush while AI is just outside it: close but concealed.
+ const m=new LaneMatch({ai:false}),c=m.opponents[0],enemy=m.members[0],brain=new LaneAI(m,c,0);m.elapsed=20;
+ // Enemy is inside south bush while AI is just outside it: close but concealed.
  c.hero.x=960;c.hero.y=560;enemy.hero.x=900;enemy.hero.y=560;m.refreshVision();brain.step(.3);assert.notEqual(c.command.kind,'attack');
  // Entering the same bush reveals the enemy under the shared vision rules.
  c.hero.x=930;m.refreshVision();brain.step(.4);assert.equal(c.command.kind,'attack');c.cooldown.q=100;c.step(.01,false);const pending=c.pending;assert.ok(pending);brain.step(.4);assert.equal(c.pending,pending);c.step(.3,false);assert.ok(enemy.hero.hp<enemy.hero.maxHp);
- enemy.hero.x=440;enemy.hero.y=500;c.hero.x=720;c.hero.y=500;m.refreshVision();brain.step(.4);assert.equal(brain.state,'retreat');assert.equal(c.command.kind,'move');assert.ok(c.anchor.x>750);
+ const tower=m.structure('blue','tower',m.laneOf(c));c.hero.x=tower.x+100;c.hero.y=tower.y;m.refreshVision();brain.step(.4);
+ assert.equal(brain.state,'retreat');assert.equal(c.command.kind,'move');assert.ok(distance(c.anchor,tower)>LANE.tower.range);
 });
 test('AI skills obey learned ranks, cooldowns, mana and the normal cast path',()=>{
  const m=new LaneMatch({ai:false}),c=m.opponents[1],enemy=m.members[0],brain=new LaneAI(m,c,1);m.elapsed=20;c.hero.x=900;c.hero.y=750;enemy.hero.x=800;enemy.hero.y=750;
