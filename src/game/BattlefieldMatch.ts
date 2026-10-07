@@ -132,6 +132,58 @@ export class BattlefieldMatch extends Squad {
     this.updateProtection();
   }
 
+  private createChampion(profile:Champion,team:BattlefieldTeam,enemies:Target[]){
+    const fountain=battlefieldFountain(team);
+    const id=team==='red'?`red-${profile.id}`:profile.id;
+    const actor=new Combat({...profile,id,spawn:{...fountain}},enemies);
+    actor.visualId=profile.id;
+    actor.progression.enabled=true;
+    actor.initializeEquipment();
+    const start=battlefieldChampionSpawn(profile.id as keyof typeof BATTLEFIELD_ROLE_BY_CHAMPION,team);
+    Object.assign(actor.hero,start);
+    actor.anchor={...start};
+    actor.hero.facing=team==='blue'?0:Math.PI;
+    actor.autoTargetAllowed=target=>target.kind!=='building'||this.supported(target,team);
+    return actor;
+  }
+
+  private rewardChampion(victim:Combat){
+    if(this.result)return;
+    const team=this.teamOf(victim)==='blue'?'red':'blue';
+    this.kills[team]++;
+    this.economy[team].add(120);
+    const eligible=this.teamMembers(team).filter(actor=>actor.alive&&!actor.progression.capped&&distance(actor.hero,victim.hero)<=PROGRESSION.rewardRange);
+    for(const actor of eligible)actor.gainExperience((120+victim.progression.level*20)/eligible.length);
+  }
+
+  shopReason(actor:Combat,item:Purchase){
+    if(this.result||!this.actors.includes(actor))return '경기 종료';
+    if(actor.alive&&distance(actor.hero,battlefieldFountain(this.teamOf(actor)))>=EQUIPMENT.fountainRadius)return '우물에서만 구매 가능';
+    const price=actor.equipment.price(item);
+    if(price===null)return '최대 단계';
+    if(item!=='weapon'&&item!=='armor'){
+      if(actor.equipment.potion)return '포션 슬롯이 가득 참';
+      if(actor.maxMana===0&&item!=='health')return '분노 챔피언은 구매 불가';
+    }
+    if(this.economy[this.teamOf(actor)].gold+1e-8<price)return '팀 골드 부족';
+    return '';
+  }
+
+  purchase(actor:Combat,item:Purchase){
+    if(this.shopReason(actor,item))return false;
+    const price=actor.equipment.price(item);
+    if(price===null||!this.economy[this.teamOf(actor)].spend(price))return false;
+    if(item==='weapon')actor.equipment.weapon++;
+    else if(item==='armor'){
+      const before=EQUIPMENT.health[actor.equipment.armor];
+      actor.equipment.armor++;
+      const delta=EQUIPMENT.health[actor.equipment.armor]-before;
+      actor.hero.maxHp+=delta;
+      if(actor.alive)actor.hero.hp+=delta;
+    }else actor.equipment.potion=item;
+    return true;
+  }
+
   laneRoute(lane:LaneId){return battlefieldLaneRoute(lane,'blue');}
   laneLength(lane:LaneId){return routeLength(this.laneRoute(lane));}
   laneProgress(team:BattlefieldTeam,lane:LaneId,point:Point){return routeProgress(this.laneRoute(lane),team,point);}
