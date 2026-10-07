@@ -2,6 +2,7 @@ import type { Point } from './config.ts';
 
 export type LaneId='top'|'mid'|'bot';
 export const LANE_IDS=['top','mid','bot'] as const;
+export const LANE_LABELS:Record<LaneId,string>={top:'상단',mid:'중앙',bot:'하단'};
 
 export const MAP_LAYOUT={
   bases:{blue:{x:100,y:850},red:{x:1500,y:150}},
@@ -24,8 +25,9 @@ export const MAP_LAYOUT={
       towers:{blue:{x:440,y:500},red:{x:1160,y:500}},
     },
     bot:{
-      points:[{x:100,y:850},{x:340,y:820},{x:800,y:840},{x:1370,y:700},{x:1500,y:150}],
-      towers:{blue:{x:340,y:820},red:{x:1370,y:700}},
+      // Exact 180-degree counterpart of top. Blue top maps to red bot and vice versa.
+      points:[{x:100,y:850},{x:340,y:810},{x:800,y:840},{x:1260,y:700},{x:1500,y:150}],
+      towers:{blue:{x:340,y:810},red:{x:1260,y:700}},
     },
   },
   bushes:[
