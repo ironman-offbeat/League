@@ -264,7 +264,7 @@ export class ArenaScene extends Phaser.Scene {
           g.fillStyle(color,.22);g.fillCircle(u.x,u.y,34);
           g.fillStyle(color);
           if(u.role==='outer'||u.role==='inner')g.fillRoundedRect(u.x-16,u.y-25,32,50,7);
-          else if(u.role==='inhibitor')g.fillDiamond(u.x,u.y,48,40);
+          else if(u.role==='inhibitor'){g.fillTriangle(u.x,u.y-24,u.x-24,u.y,u.x,u.y+24);g.fillTriangle(u.x,u.y-24,u.x+24,u.y,u.x,u.y+24);}
           else g.fillTriangle(u.x,u.y-32,u.x-30,u.y+26,u.x+30,u.y+26);
         }
         if(u.protected){g.lineStyle(2,0xebe3b6,.7);g.strokeCircle(u.x,u.y,39);}
