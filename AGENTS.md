@@ -5,6 +5,7 @@
 - Canonical design is docs/DESIGN.md. New numeric values are provisional balance settings, not proven values.
 - Keep simulation independent of Phaser rendering. Commands share one rules path; data belongs in config.
 - Navigation is route/graph based. Do not encode lane behavior as raw x-axis progression or hard-code a champion to map coordinates. Preserve the prototype route until the full three-lane match is explicitly switched over.
+- Full-map structures and waves belong to the independent BattlefieldState until the explicit match migration. Preserve same-lane outer → inner → inhibitor gating, unlock the nexus after any inhibitor falls, and derive super-minion waves from inhibitor state rather than UI state.
 - Explicit move overrides attack and cancels windup without resetting attack cooldown.
 - Attack is move-and-fight: capture the ordered location as the new anchor, fight encountered enemies, prioritize the explicit target in range, then continue to the ordered location after target loss/death. Never return to the pre-attack position. Track target generation; hidden targets only reveal their last observed location.
 - Dash cancels chase and establishes the destination as the new anchor.
