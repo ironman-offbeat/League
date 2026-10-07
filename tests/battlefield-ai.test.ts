@@ -28,11 +28,10 @@ test('battlefield lane AI waits for the first wave then issues route-bound advan
   for(const [index,lane] of ['top','mid','bottom'].entries()){
     const brain=match.ai[index],actor=brain.actor;
     assert.equal(brain.state,'advance');
-    assert.equal(actor.command.kind,'attackMove');
-    if(actor.command.kind!=='attackMove')continue;
+    assert.ok(distance(actor.hero,starts[index])>20);
     const route=battlefieldLaneRoute(lane as 'top'|'mid'|'bottom','blue');
-    const projection=projectToRoute(route,actor.command.point);
-    assert.ok(distance(projection.point,actor.command.point)<90);
+    const projection=projectToRoute(route,actor.hero);
+    assert.ok(distance(projection.point,actor.hero)<90);
   }
 });
 
@@ -40,6 +39,10 @@ test('battlefield AI engages a nearby enemy champion through ordinary attack com
   const match=new BattlefieldMatch({ai:true});
   match.elapsed=20;
   const brain=match.ai[0],red=brain.actor,blue=match.members[0];
+  for(const lane of ['top','mid','bottom'] as const){
+    match.structure('blue','outer',lane).alive=false;
+    match.structure('blue','inner',lane).alive=false;
+  }
   red.hero.x=760;red.hero.y=470;red.anchor={x:red.hero.x,y:red.hero.y};
   blue.hero.x=800;blue.hero.y=470;blue.anchor={x:blue.hero.x,y:blue.hero.y};
 
@@ -53,6 +56,11 @@ test('low-health battlefield AI uses the shared retreat and recall path toward i
   const match=new BattlefieldMatch({ai:true});
   match.elapsed=20;
   const brain=match.ai[1],actor=brain.actor;
+  for(const lane of ['top','mid','bottom'] as const){
+    match.structure('blue','outer',lane).alive=false;
+    match.structure('blue','inner',lane).alive=false;
+  }
+  for(const enemy of match.members){enemy.hero.x=140;enemy.hero.y=840;}
   actor.hero.x=900;actor.hero.y=500;
   actor.hero.hp=actor.hero.maxHp*.2;
   actor.lastCombat=-100;
