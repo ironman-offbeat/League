@@ -79,6 +79,8 @@ export class LaneMatch extends Squad {
       return c;
     });
     this.redTargets.push(...this.units.filter(u=>u.team==='blue'));
+    const blue=this.members.map(championTarget);
+    this.championTargets.push(...blue);this.redTargets.push(...blue);
     if(options.enemyChampions!==false){
       this.opponents=CHAMPIONS.map((profile,i)=>{
         const c=new Combat({...profile,id:`red-${profile.id}`,spawn:{x:1600-LANE.spawns[i].x,y:1000-LANE.spawns[i].y}},this.redTargets);
@@ -86,8 +88,8 @@ export class LaneMatch extends Squad {
         c.autoTargetAllowed=target=>target.kind!=='building'||this.supported(target,'red');
         return c;
       });
-      const blue=this.members.map(championTarget),red=this.opponents.map(championTarget);
-      this.championTargets.push(...blue,...red);this.enemies.push(...red);this.redTargets.push(...blue);
+      const red=this.opponents.map(championTarget);
+      this.championTargets.push(...red);this.enemies.push(...red);
       for(const c of this.actors)c.onDeath=()=>this.rewardChampion(c);
       if(options.ai!==false)this.ai=this.opponents.map((c,i)=>new LaneAI(this,c,i));
     }
@@ -98,7 +100,7 @@ export class LaneMatch extends Squad {
       actor.onOffensiveAction=()=>this.expose(actor);
     }
     this.updateProtection();
-    this.updateVision();
+    this.refreshVision();
   }
   private targetTeam(target:Target):Team|null{
     const unitTeam=(target as Partial<LaneUnit>).team;if(unitTeam==='blue'||unitTeam==='red')return unitTeam;
@@ -119,7 +121,7 @@ export class LaneMatch extends Squad {
     return sighting&&sighting.generation===target.generation?{x:sighting.x,y:sighting.y}:null;
   }
   expose(actor:Combat){this.exposedUntil.set(actor.profile.id,this.elapsed+LANE.vision.attackReveal);}
-  private updateVision(){
+  refreshVision(){
     const sources:VisionSource[]=[];
     for(const actor of this.actors)if(actor.alive)sources.push({team:this.teamOf(actor),x:actor.hero.x,y:actor.hero.y,radius:LANE.vision.champion,alive:true});
     for(const unit of this.units)if(unit.alive)sources.push({team:unit.team,x:unit.x,y:unit.y,radius:unit.kind==='building'?LANE.vision.tower:LANE.vision.minion,alive:true});
@@ -195,7 +197,11 @@ export class LaneMatch extends Squad {
   private valid(v:Victim){return v.unit?v.unit.alive:!!v.actor?.alive&&v.actor.life===v.life&&(!v.pet||(v.actor.abilities.pet===v.pet&&v.pet.hp>0));}
   private defenders(attacker:LaneUnit):Victim[]{
     const candidates:Victim[]=this.units.filter(u=>u.team!==attacker.team&&u.alive&&!u.protected&&this.canSee(attacker.team,u)).map(unit=>({unit,point:unit}));
-    for(const actor of this.teamMembers(attacker.team==='red'?'blue':'red').filter(c=>c.alive&&this.canSee(attacker.team,this.championTargets.find(t=>t.id===c.profile.id)!))){
+    for(const actor of this.teamMembers(attacker.team==='red'?'blue':'red').filter(c=>{
+      if(!c.alive)return false;
+      const target=this.championTargets.find(t=>t.id===c.profile.id);
+      return !!target&&this.canSee(attacker.team,target);
+    })){
       candidates.push({actor,point:actor.hero,life:actor.life});
       if(actor.abilities.pet&&this.pointVisible(attacker.team,actor.abilities.pet))candidates.push({actor,pet:actor.abilities.pet,point:actor.abilities.pet,life:actor.life});
     }
@@ -215,7 +221,7 @@ export class LaneMatch extends Squad {
     Combat.stepEnemies(this.units,dt);
     this.updateProtection();
     for(const target of this.championTargets){target.revealed=Math.max(0,target.revealed-dt);target.alert=Math.max(0,target.alert-dt);}
-    this.updateVision();
+    this.refreshVision();
     for(const brain of this.ai)brain.step(dt);
     for(const c of this.actors){
       // Automatic siege stops when its escort dies. Explicit attack orders remain risky by choice.
@@ -225,7 +231,7 @@ export class LaneMatch extends Squad {
       }
       c.step(dt,false);
     }
-    this.updateVision();
+    this.refreshVision();
     this.updateProtection();
     const hits:{target:Victim;damage:number}[]=[];
     for(const unit of this.units){
@@ -257,8 +263,11 @@ export class LaneMatch extends Squad {
       if(unit.stunned>0||unit.airborne>0)continue;
       const stats=LANE[unit.role as MinionClass];
       const defenders=this.defenders(unit);
+      const objective=this.units.filter(u=>u.team!==unit.team&&u.kind==='building'&&u.alive&&!u.protected)
+        .sort((a,b)=>distance(unit,a)-distance(unit,b))[0];
       const target=defenders.filter(v=>v.unit?.kind!=='building'&&distance(unit,v.point)<=220).sort((a,b)=>distance(unit,a.point)-distance(unit,b.point))[0]
-        ??defenders.filter(v=>v.unit?.kind==='building').sort((a,b)=>distance(unit,a.point)-distance(unit,b.point))[0];
+        ??defenders.filter(v=>v.unit?.kind==='building').sort((a,b)=>distance(unit,a.point)-distance(unit,b.point))[0]
+        ??(objective?{unit:objective,point:objective}:undefined);
       if(!target)continue;
       const d=distance(unit,target.point);
       if(d>stats.range){if(unit.rooted<=0)Object.assign(unit,towards(unit,target.point,Math.min(d-stats.range,stats.speed*(1-unit.slow)*dt)));}
