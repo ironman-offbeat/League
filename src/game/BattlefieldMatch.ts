@@ -220,13 +220,29 @@ export class BattlefieldMatch extends Squad {
       attackCooldown:0,respawn:Infinity,generation:0,
       ...freshStatus(),
     };
+    unit.onDeath=()=>this.rewardUnit(unit);
     return unit;
   }
 
-  private supported(target:BattlefieldUnit,attacker:BattlefieldTeam){
+  private rewardUnit(unit:BattlefieldUnit){
+    if(this.result)return;
+    const team=unit.team==='blue'?'red':'blue';
+    if(unit.kind==='building'){
+      this.economy[team].add(BATTLEFIELD.buildingRewards[unit.role as BattlefieldStructureRole]);
+      return;
+    }
+    const reward=PROGRESSION.rewards[unit.role as BattlefieldMinionRole];
+    const nearby=this.teamMembers(team).filter(actor=>actor.alive&&distance(actor.hero,unit)<=PROGRESSION.rewardRange);
+    if(nearby.length)this.economy[team].add(reward.gold);
+    const eligible=nearby.filter(actor=>!actor.progression.capped);
+    for(const actor of eligible)actor.gainExperience(reward.xp/eligible.length);
+  }
+
+  supported(target:Point,attacker:BattlefieldTeam){
+    const lane=(target as Partial<BattlefieldUnit>).lane;
     return this.units.some(unit=>
       unit.alive&&unit.kind==='minion'&&unit.team===attacker&&
-      (target.lane===null||unit.lane===target.lane)&&
+      (lane===null||lane===undefined||unit.lane===lane)&&
       distance(unit,target)<=BATTLEFIELD.supportRange
     );
   }
