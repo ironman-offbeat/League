@@ -133,12 +133,12 @@ export class ArenaScene extends Phaser.Scene {
     this.renderActors();
     this.renderGuide();
     for(const owner of this.champions)for(const event of owner.events.splice(0)) {
-      const enemyOwner=this.match?.opponents.includes(owner)??false;
-      if(enemyOwner){
-        const ownerTarget=this.match!.championTargets.find(t=>t.id===owner.profile.id);
+      const enemyOwner=this.session?.opponents.includes(owner)??false;
+      if(enemyOwner&&this.match){
+        const ownerTarget=this.match.championTargets.find(t=>t.id===owner.profile.id);
         const sourceEvent=event.entityId===owner.profile.id||event.kind==='cast'||event.kind==='slash'||event.kind==='ultimate'||event.kind==='levelUp'||event.kind==='heal';
-        if(sourceEvent&&(!ownerTarget||!this.match!.canSee('blue',ownerTarget)))continue;
-        if(!sourceEvent&&!this.match!.pointVisible('blue',event.point))continue;
+        if(sourceEvent&&(!ownerTarget||!this.match.canSee('blue',ownerTarget)))continue;
+        if(!sourceEvent&&!this.match.pointVisible('blue',event.point))continue;
       }
       if(event.entityId&&(event.kind==='cast'||event.kind==='damage'))this.poses.set(event.entityId,{kind:event.kind==='cast'?'cast':'hurt',until:this.combat.elapsed+(this.visuals?.clipDuration(actorVisual(this.champions.find(c=>c.profile.id===event.entityId)?.visualId??event.entityId),event.kind==='cast'?'cast':'hurt')??.3)});
       const custom=event.visual?this.visuals?.effect(event.visual,event.point):false;
@@ -159,8 +159,9 @@ export class ArenaScene extends Phaser.Scene {
   }
   private renderActors() {
     const g=this.actors;g.clear();
-    this.visuals?.draw('map',this.match?'map.lane':'map.training',{x:RULES.world.width/2,y:RULES.world.height/2},'idle',0,1);
+    if(!this.battlefield)this.visuals?.draw('map',this.match?'map.lane':'map.training',{x:RULES.world.width/2,y:RULES.world.height/2},'idle',0,1);
     if(this.match)this.renderLane();
+    else if(this.battlefield)this.renderBattlefield();
     else this.combat.enemies.forEach((e,i)=>{
       const label=this.labels[i];label.setVisible(this.combat.canSee(e));if(!this.combat.canSee(e))return;label.setPosition(e.x,e.y-69);
       label.setText(e.alive?(e.stunned>0?'기절':e.rooted>0?'속박':e.slowRemaining>0?'둔화':e.marked>0?'저주':'훈련 대상'): `${Math.max(1,Math.ceil(e.respawn))}초 후 재생성`);
@@ -179,7 +180,7 @@ export class ArenaScene extends Phaser.Scene {
       g.lineStyle(2,0xef856b,.65);g.lineBetween(attack.enemy.x,attack.enemy.y,p.x,p.y);g.strokeCircle(p.x,p.y,29);
     }
     for (const member of this.champions) {
-      const enemyMember=this.match?.opponents.includes(member)??false;
+      const enemyMember=this.session?.opponents.includes(member)??false;
       const visiblePoint=(p:Point)=>!enemyMember||!this.match||this.match.pointVisible('blue',p);
       const a=member.abilities;
       for(const m of a.missiles){if(!visiblePoint(m.point))continue;if(this.visuals?.draw(m,`projectile.${member.profile.kit}.${m.kind}`,m.point,'walk',Math.atan2(m.direction.y,m.direction.x)))continue;g.fillStyle(member.profile.color);g.fillCircle(m.point.x,m.point.y,m.kind==='arrow'?10:6);}
@@ -193,7 +194,7 @@ export class ArenaScene extends Phaser.Scene {
       for (const p of member.projectiles) { if(!visiblePoint(p))continue;if(this.visuals?.draw(p,`projectile.${member.visualId}.basic`,p,'walk',Math.atan2(p.target.y-p.y,p.target.x-p.x)))continue;g.fillStyle(member.profile.color); g.fillCircle(p.x,p.y,5); }
     }
     for (const c of this.champions) {
-    const enemy=this.match?.opponents.includes(c)??false;
+    const enemy=this.session?.opponents.includes(c)??false;
     const target=enemy?this.match?.championTargets.find(t=>t.id===c.profile.id):undefined;
     if(enemy&&target&&!this.match!.canSee('blue',target))continue;
     const h=c.hero,last=this.lastPositions.get(c.profile.id),pose=this.poses.get(c.profile.id);
