@@ -16,6 +16,7 @@ export class TeamVision {
   private bushes:Bush[];
   private sources:VisionSource[]=[];
   private explored:Record<VisionTeam,Set<number>>={blue:new Set(),red:new Set()};
+  private exploredSamples:Record<VisionTeam,Set<string>>={blue:new Set(),red:new Set()};
   private sightings:Record<VisionTeam,Map<string,Sighting>>={blue:new Map(),red:new Map()};
   private columns:number;
   constructor(width:number,height:number,bushes:readonly Bush[]=[],cellSize=40){
@@ -59,7 +60,14 @@ export class TeamVision {
   update(sources:readonly VisionSource[],subjects:readonly VisionSubject[],time:number){
     if(!Number.isFinite(time)||time<0)throw new Error('Vision time must be finite and nonnegative');
     this.sources=sources.filter(s=>s.alive&&Number.isFinite(s.x)&&Number.isFinite(s.y)&&Number.isFinite(s.radius)&&s.radius>=0).map(s=>({...s}));
+    // Explored terrain is monotonic. Quantize source positions so long fixed-step
+    // matches do not recompute the same cells thousands of times while live
+    // visibility still uses the exact source positions above.
+    const sampleSize=this.cellSize/4;
     for(const source of this.sources){
+      const key=`${Math.floor(source.x/sampleSize)}:${Math.floor(source.y/sampleSize)}:${source.radius}`;
+      if(this.exploredSamples[source.team].has(key))continue;
+      this.exploredSamples[source.team].add(key);
       const minX=Math.max(0,Math.floor((source.x-source.radius)/this.cellSize));
       const maxX=Math.min(this.columns-1,Math.floor((source.x+source.radius)/this.cellSize));
       const minY=Math.max(0,Math.floor((source.y-source.radius)/this.cellSize));
@@ -76,5 +84,5 @@ export class TeamVision {
       else if(!subject.alive&&this.canSee(team,{...subject,alive:true}))this.sightings[team].delete(subject.id);
     }
   }
-  reset(){this.sources=[];for(const team of ['blue','red'] as const){this.explored[team].clear();this.sightings[team].clear();}}
+  reset(){this.sources=[];for(const team of ['blue','red'] as const){this.explored[team].clear();this.exploredSamples[team].clear();this.sightings[team].clear();}}
 }
