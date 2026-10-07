@@ -1,8 +1,10 @@
 import { Squad } from './Squad.ts';
 import { Combat } from './combat.ts';
 import { CHAMPIONS } from './champions.ts';
-import { distance } from './config.ts';
+import { RULES, distance } from './config.ts';
 import type { Point } from './config.ts';
+import { TeamVision } from './vision.ts';
+import type { VisionSource, VisionSubject } from './vision.ts';
 import { freshStatus, mitigate, towards } from './effects.ts';
 import { damageTarget } from './targets.ts';
 import type { Target } from './targets.ts';
@@ -22,6 +24,11 @@ export const LANE = {
   ranged:{hp:220,armor:0,range:145,attack:27,interval:1.5,speed:70},
   siege:{hp:650,armor:15,range:175,attack:55,interval:2,speed:60},
   spawns:[{x:180,y:470},{x:115,y:435},{x:115,y:565},{x:180,y:530}],
+  vision:{champion:340,minion:235,tower:310,scout:260,cell:80,attackReveal:1.5},
+  bushes:[
+    {id:'lane-north',x:650,y:390,width:260,height:90},
+    {id:'lane-south',x:690,y:520,width:260,height:90},
+  ],
 } as const;
 export type Team='blue'|'red';
 type MinionClass='melee'|'ranged'|'siege';
@@ -47,6 +54,8 @@ export class LaneMatch extends Squad {
   result:MatchResult|null=null;
   economy={blue:new TeamEconomy(),red:new TeamEconomy()};
   towerShots=new Map<string,TowerShot>();
+  readonly vision=new TeamVision(RULES.world.width,RULES.world.height,LANE.bushes,LANE.vision.cell);
+  private exposedUntil=new Map<string,number>();
   private towerFocus=new Map<string,{key:unknown;hits:number}>();
   private towerProvoker(tower:LaneUnit){
     const alliedIds=new Set(this.teamMembers(tower.team).map(c=>c.profile.id));
@@ -82,7 +91,41 @@ export class LaneMatch extends Squad {
       for(const c of this.actors)c.onDeath=()=>this.rewardChampion(c);
       if(options.ai!==false)this.ai=this.opponents.map((c,i)=>new LaneAI(this,c,i));
     }
+    for(const actor of this.actors){
+      const team=this.teamOf(actor);
+      actor.visibilityResolver=target=>this.canSee(team,target);
+      actor.lastSeenResolver=target=>this.lastSeen(team,target);
+      actor.onOffensiveAction=()=>this.expose(actor);
+    }
     this.updateProtection();
+    this.updateVision();
+  }
+  private targetTeam(target:Target):Team|null{
+    const unit=this.units.find(u=>u===target||u.id===target.id);if(unit)return unit.team;
+    const actor=this.actors.find(c=>c.profile.id===target.id);return actor?this.teamOf(actor):null;
+  }
+  private subject(target:Target):VisionSubject|null{
+    const team=this.targetTeam(target);if(!team)return null;
+    return {id:target.id,team,x:target.x,y:target.y,generation:target.generation,alive:target.alive,exposed:(this.exposedUntil.get(target.id)??0)>this.elapsed};
+  }
+  canSee(team:Team,target:Target){
+    const subject=this.subject(target);return subject?this.vision.canSee(team,subject):target.visible||target.revealed>0;
+  }
+  pointVisible(team:Team,point:Point){return this.vision.pointVisible(team,point);}
+  terrain(team:Team,point:Point){return this.vision.terrain(team,point);}
+  lastSeen(team:Team,target:Target){
+    const sighting=this.vision.lastSeen(team,target.id);
+    return sighting&&sighting.generation===target.generation?{x:sighting.x,y:sighting.y}:null;
+  }
+  expose(actor:Combat){this.exposedUntil.set(actor.profile.id,this.elapsed+LANE.vision.attackReveal);}
+  private updateVision(){
+    const sources:VisionSource[]=[];
+    for(const actor of this.actors)if(actor.alive)sources.push({team:this.teamOf(actor),x:actor.hero.x,y:actor.hero.y,radius:LANE.vision.champion,alive:true});
+    for(const unit of this.units)if(unit.alive)sources.push({team:unit.team,x:unit.x,y:unit.y,radius:unit.kind==='building'?LANE.vision.tower:LANE.vision.minion,alive:true});
+    for(const actor of this.actors){const scout=actor.abilities.scout;if(scout)sources.push({team:this.teamOf(actor),x:scout.x,y:scout.y,radius:LANE.vision.scout,alive:true,revealsBush:true});}
+    const subjects:VisionSubject[]=[];
+    for(const target of [...this.championTargets,...this.units]){const subject=this.subject(target);if(subject)subjects.push(subject);}
+    this.vision.update(sources,subjects,this.elapsed);
   }
   private rewardChampion(victim:Combat){
     if(this.result)return;
@@ -150,10 +193,10 @@ export class LaneMatch extends Squad {
   }
   private valid(v:Victim){return v.unit?v.unit.alive:!!v.actor?.alive&&v.actor.life===v.life&&(!v.pet||(v.actor.abilities.pet===v.pet&&v.pet.hp>0));}
   private defenders(attacker:LaneUnit):Victim[]{
-    const candidates:Victim[]=this.units.filter(u=>u.team!==attacker.team&&u.alive&&!u.protected).map(unit=>({unit,point:unit}));
-    for(const actor of this.teamMembers(attacker.team==='red'?'blue':'red').filter(c=>c.alive)){
+    const candidates:Victim[]=this.units.filter(u=>u.team!==attacker.team&&u.alive&&!u.protected&&this.canSee(attacker.team,u)).map(unit=>({unit,point:unit}));
+    for(const actor of this.teamMembers(attacker.team==='red'?'blue':'red').filter(c=>c.alive&&this.canSee(attacker.team,this.championTargets.find(t=>t.id===c.profile.id)!))){
       candidates.push({actor,point:actor.hero,life:actor.life});
-      if(actor.abilities.pet)candidates.push({actor,pet:actor.abilities.pet,point:actor.abilities.pet,life:actor.life});
+      if(actor.abilities.pet&&this.pointVisible(attacker.team,actor.abilities.pet))candidates.push({actor,pet:actor.abilities.pet,point:actor.abilities.pet,life:actor.life});
     }
     return candidates;
   }
@@ -171,6 +214,7 @@ export class LaneMatch extends Squad {
     Combat.stepEnemies(this.units,dt);
     this.updateProtection();
     for(const target of this.championTargets){target.revealed=Math.max(0,target.revealed-dt);target.alert=Math.max(0,target.alert-dt);}
+    this.updateVision();
     for(const brain of this.ai)brain.step(dt);
     for(const c of this.actors){
       // Automatic siege stops when its escort dies. Explicit attack orders remain risky by choice.
@@ -180,6 +224,7 @@ export class LaneMatch extends Squad {
       }
       c.step(dt,false);
     }
+    this.updateVision();
     this.updateProtection();
     const hits:{target:Victim;damage:number}[]=[];
     for(const unit of this.units){
