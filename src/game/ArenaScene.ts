@@ -124,7 +124,9 @@ export class ArenaScene extends Phaser.Scene {
     this.renderFog();
     this.renderActors();
     this.renderGuide();
-    for(const event of this.champions.flatMap(c => c.events.splice(0))) {
+    for(const owner of this.champions)for(const event of owner.events.splice(0)) {
+      const enemyOwner=this.match?.opponents.includes(owner)??false;
+      if(enemyOwner&&!this.match!.pointVisible('blue',event.point))continue;
       if(event.entityId&&(event.kind==='cast'||event.kind==='damage'))this.poses.set(event.entityId,{kind:event.kind==='cast'?'cast':'hurt',until:this.combat.elapsed+(this.visuals?.clipDuration(actorVisual(this.champions.find(c=>c.profile.id===event.entityId)?.visualId??event.entityId),event.kind==='cast'?'cast':'hurt')??.3)});
       const custom=event.visual?this.visuals?.effect(event.visual,event.point):false;
       if(event.kind==='levelUp'){
