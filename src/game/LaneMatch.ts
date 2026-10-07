@@ -101,8 +101,9 @@ export class LaneMatch extends Squad {
     this.updateVision();
   }
   private targetTeam(target:Target):Team|null{
-    const unit=this.units.find(u=>u===target||u.id===target.id);if(unit)return unit.team;
-    const actor=this.actors.find(c=>c.profile.id===target.id);return actor?this.teamOf(actor):null;
+    const unitTeam=(target as Partial<LaneUnit>).team;if(unitTeam==='blue'||unitTeam==='red')return unitTeam;
+    if(this.championTargets.some(t=>t===target||t.id===target.id))return target.id.startsWith('red-')?'red':'blue';
+    return null;
   }
   private subject(target:Target):VisionSubject|null{
     const team=this.targetTeam(target);if(!team)return null;
