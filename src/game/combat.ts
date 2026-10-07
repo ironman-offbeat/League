@@ -25,6 +25,7 @@ export class Combat {
   lastSeenResolver?:(target:Dummy)=>Point|null;
   memoryResolver?:(targetId:string,generation:number)=>Point|null;
   onOffensiveAction?:()=>void;
+  onSummonOffensiveAction?:()=>void;
   // Entity IDs distinguish teams; art keys continue to identify the original champion.
   visualId:string;
   profile: Champion;
@@ -62,6 +63,7 @@ export class Combat {
   lastSeenFor(e:Dummy){return this.lastSeenResolver?.(e)??(this.canSee(e)?{x:e.x,y:e.y}:null);}
   memoryFor(targetId:string,generation:number){return this.memoryResolver?.(targetId,generation)??null;}
   offensiveAction(){this.onOffensiveAction?.();}
+  summonOffensiveAction(){this.onSummonOffensiveAction?.();}
   castSkill(slot:SkillSlot,point?:Point){
     const cast=this.abilities.cast(slot,point);
     if(cast)this.events.push({kind:'cast',point:{x:this.hero.x,y:this.hero.y},entityId:this.profile.id,visual:`skill.${this.profile.kit}.${slot}`});
