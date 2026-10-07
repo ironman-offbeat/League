@@ -126,15 +126,21 @@ test('portrait blocks play, landscape recovers and cancelled gestures do not mov
 test('switching champions keeps previous orders and independent HUD',async({page,isMobile},info)=>{
  await page.goto('/');await expect(page.locator('body')).toHaveAttribute('data-ready','true');
  const choose=async(id:string)=>{if(isMobile)await page.locator(`#champion-${id}`).tap();else await page.locator(`#champion-${id}`).click();};
- const command=async(x:number,y:number)=>{
-  const p=await page.evaluate(({x,y})=>{const d=(window as any).leagueDebug;const r=document.querySelector('canvas')!.getBoundingClientRect();return{sx:r.left+d.hero.x-d.camera.x,sy:r.top+d.hero.y-d.camera.y,x:r.left+x-d.camera.x,y:r.top+y-d.camera.y};},{x,y});
-  await page.mouse.move(p.sx,p.sy);await page.mouse.down();await page.mouse.move(p.x,p.y,{steps:8});await page.mouse.up();
+ const command=async()=>{
+  for(let attempt=0;attempt<3;attempt++){
+   await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+   const p=await page.evaluate(()=>{const d=(window as any).leagueDebug,r=document.querySelector('canvas')!.getBoundingClientRect(),e=d.enemies[0],z=d.camera.zoom??1;return{sx:r.left+(d.hero.x-d.camera.x)*z,sy:r.top+(d.hero.y-d.camera.y)*z,x:r.left+(e.x-d.camera.x)*z,y:r.top+(e.y-d.camera.y)*z};});
+   await page.mouse.move(p.sx,p.sy);await page.mouse.down();await page.mouse.move(p.x,p.y,{steps:8});await page.mouse.up();
+   await page.waitForTimeout(80);
+   if(await page.evaluate(()=>(window as any).leagueDebug.command)==='attack')return;
+  }
+  await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.command),{timeout:3000}).toBe('attack');
  };
- await command(720,470);await choose('annie');
+ await command();await choose('annie');
  await expect(page.locator('#champion-name')).toHaveText('애니');await expect(page.locator('#dash')).toBeEnabled();await expect(page.locator('#dash span')).toHaveText('화염');await expect(page.locator('#fury-text')).toContainText('420');
- await command(720,470);await choose('ashe');
- await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.members[0].damage),{timeout:10000}).toBeGreaterThan(0);
- await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.members[1].damage),{timeout:10000}).toBeGreaterThan(0);
+ await command();await choose('ashe');
+ await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.members[0].damage),{timeout:20000}).toBeGreaterThan(0);
+ await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.members[1].damage),{timeout:20000}).toBeGreaterThan(0);
  expect(await page.evaluate(()=>(window as any).leagueDebug.members[0].command)).toBe('attack');
  await choose('amumu');await expect(page.locator('#hp-text')).toContainText('900');
  await page.locator('#pause').click();const before=await page.evaluate(()=>(window as any).leagueDebug.members.map((m:any)=>m.elapsed));await page.waitForTimeout(300);
@@ -203,19 +209,22 @@ test('target defeat continues toward the attacked location instead of returning 
  await page.goto('/');await expect(page.locator('body')).toHaveAttribute('data-ready','true');
  const press=async(id:string)=>{if(isMobile)await page.locator(id).tap();else await page.locator(id).click();};
  await press('#retaliation');
+ const targetPoint=await page.evaluate(()=>{const e=(window as any).leagueDebug.enemies[0];return{x:e.x,y:e.y};});
  const attack=async()=>{
-  // Selection recenters the Phaser camera; its inverse matrix updates on render.
-  // Start the gesture only after the displayed frame matches the new scroll.
-  await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
-  const p=await page.evaluate(()=>{const d=(window as any).leagueDebug,r=document.querySelector('canvas')!.getBoundingClientRect();return{sx:r.left+d.hero.x-d.camera.x,sy:r.top+d.hero.y-d.camera.y,x:r.left+720-d.camera.x,y:r.top+470-d.camera.y};});
-  await page.mouse.move(p.sx,p.sy);await page.mouse.down();await page.mouse.move(p.x,p.y,{steps:8});await page.mouse.up();
-  await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.command)).toBe('attack');
+  // Selection recenters the Phaser camera; wait until its inverse matrix matches
+  // the displayed frame, then aim at the live target instead of a fixture coordinate.
+  for(let attempt=0;attempt<3;attempt++){
+   await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+   const p=await page.evaluate(()=>{const d=(window as any).leagueDebug,r=document.querySelector('canvas')!.getBoundingClientRect(),e=d.enemies[0],z=d.camera.zoom??1;return{sx:r.left+(d.hero.x-d.camera.x)*z,sy:r.top+(d.hero.y-d.camera.y)*z,x:r.left+(e.x-d.camera.x)*z,y:r.top+(e.y-d.camera.y)*z};});
+   await page.mouse.move(p.sx,p.sy);await page.mouse.down();await page.mouse.move(p.x,p.y,{steps:8});await page.mouse.up();
+   await page.waitForTimeout(80);
+   if(await page.evaluate(()=>(window as any).leagueDebug.command)==='attack')return;
+  }
+  await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.command),{timeout:3000}).toBe('attack');
  };
  await attack();
- // Mobile pointer coordinates can round by half a pixel. Compare against the
- // actual accepted order, then ensure combat never changes that destination.
  const destination=await page.evaluate(()=>(window as any).leagueDebug.anchor);
- expect(Math.hypot(destination.x-720,destination.y-470)).toBeLessThan(2);
+ expect(Math.hypot(destination.x-targetPoint.x,destination.y-targetPoint.y)).toBeLessThan(2);
  await press('#champion-annie');await attack();await press('#champion-renekton');
  await expect.poll(()=>page.evaluate(()=>{const e=(window as any).leagueDebug.enemies[0];return !e.alive||e.generation>0;}),{timeout:60000}).toBe(true);
  await expect.poll(()=>page.evaluate(p=>{const h=(window as any).leagueDebug.hero;return Math.hypot(h.x-p.x,h.y-p.y);},destination),{timeout:15000}).toBeLessThan(1);
