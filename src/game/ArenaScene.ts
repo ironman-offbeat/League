@@ -316,6 +316,29 @@ export class ArenaScene extends Phaser.Scene {
   private drawMap() {
     this.mapLayer?.destroy(true);this.mapLayer=this.add.container(0,0).setDepth(0);
     const g=this.add.graphics();this.mapLayer.add(g);const w=RULES.world.width,h=RULES.world.height;
+    if(this.battlefield){
+      g.fillStyle(0x24392f);g.fillRect(0,0,w,h);
+      for(const lane of ['top','mid','bottom'] as const){
+        const route=battlefieldLaneRoute(lane,'blue');
+        g.lineStyle(116,0x555c49,.5);
+        for(let i=1;i<route.length;i++)g.lineBetween(route[i-1].x,route[i-1].y,route[i].x,route[i].y);
+        g.lineStyle(82,0x77765d,.4);
+        for(let i=1;i<route.length;i++)g.lineBetween(route[i-1].x,route[i-1].y,route[i].x,route[i].y);
+        g.lineStyle(2,0xb4ae7b,.24);
+        for(let i=1;i<route.length;i++)g.lineBetween(route[i-1].x,route[i-1].y,route[i].x,route[i].y);
+      }
+      const north=BATTLEFIELD_NAVIGATION.node('river-north').point,south=BATTLEFIELD_NAVIGATION.node('river-south').point;
+      g.lineStyle(105,0x315d64,.3);g.lineBetween(north.x,north.y,south.x,south.y);
+      for(const id of ['blue-jungle-top','blue-jungle-bottom','red-jungle-top','red-jungle-bottom']){
+        const p=BATTLEFIELD_NAVIGATION.node(id).point;g.fillStyle(0x173b2a,.7);g.fillCircle(p.x,p.y,64);g.lineStyle(2,0x4d704d,.4);g.strokeCircle(p.x,p.y,64);
+      }
+      for(const team of ['blue','red'] as const){
+        const p=BATTLEFIELD_NAVIGATION.node(team==='blue'?'blue-base':'red-base').point;
+        const color=team==='blue'?0x345e60:0x664c48;g.fillStyle(color,.9);g.fillCircle(p.x,p.y,92);g.lineStyle(3,0xc4bc88,.45);g.strokeCircle(p.x,p.y,78);
+      }
+      this.mapLayer.add(this.add.text(800,500,'THREE LANE BATTLEFIELD',{fontFamily:'Georgia,serif',fontSize:'15px',color:'#abb28b'}).setOrigin(.5).setAlpha(.35));
+      return;
+    }
     if(this.match){
       g.fillStyle(0x263d32);g.fillRect(0,0,w,h);
       g.fillStyle(0x62604a);g.fillRoundedRect(60,LANE.y-110,w-120,220,65);
