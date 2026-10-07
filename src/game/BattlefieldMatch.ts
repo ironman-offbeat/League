@@ -296,44 +296,65 @@ export class BattlefieldMatch extends Squad {
     return nexus.alive&&!nexus.protected?nexus:undefined;
   }
 
-  private defenders(unit:BattlefieldUnit){
+  private defenders(unit:BattlefieldUnit):BattlefieldVictim[]{
     if(unit.lane===null)return [];
-    return this.units.filter(other=>
-      other.alive&&other.team!==unit.team&&other.kind==='minion'&&other.lane===unit.lane
-    );
+    const enemyTeam=unit.team==='blue'?'red':'blue';
+    const candidates:BattlefieldVictim[]=this.units
+      .filter(other=>other.alive&&other.team===enemyTeam&&other.kind==='minion'&&other.lane===unit.lane)
+      .map(other=>({unit:other,point:other}));
+    for(const actor of this.teamMembers(enemyTeam)){
+      if(actor.alive)candidates.push({actor,point:actor.hero,life:actor.life});
+    }
+    return candidates;
   }
 
-  private stepTower(unit:BattlefieldUnit,hits:{target:BattlefieldUnit;damage:number}[]){
+  private valid(victim:BattlefieldVictim){
+    return victim.unit?victim.unit.alive:!!victim.actor?.alive&&victim.actor.life===victim.life;
+  }
+
+  private hit(victim:BattlefieldVictim,raw:number){
+    if(!this.valid(victim))return;
+    if(victim.unit)damageTarget(victim.unit,raw,'physical','basic');
+    else victim.actor!.receiveDamage(raw);
+  }
+
+  private stepTower(unit:BattlefieldUnit,hits:{target:BattlefieldVictim;damage:number}[]){
     if(unit.role!=='outer'&&unit.role!=='inner')return;
     const stats=BATTLEFIELD.structures[unit.role];
     if(unit.attackCooldown>0)return;
-    const target=this.units
-      .filter(other=>other.alive&&other.kind==='minion'&&other.team!==unit.team&&other.lane===unit.lane&&distance(unit,other)<=stats.range)
-      .sort((a,b)=>distance(unit,a)-distance(unit,b))[0];
+    const enemyTeam=unit.team==='blue'?'red':'blue';
+    const candidates:BattlefieldVictim[]=this.units
+      .filter(other=>other.alive&&other.kind==='minion'&&other.team===enemyTeam&&other.lane===unit.lane&&distance(unit,other)<=stats.range)
+      .map(other=>({unit:other,point:other}));
+    for(const actor of this.teamMembers(enemyTeam)){
+      if(actor.alive&&distance(unit,actor.hero)<=stats.range)candidates.push({actor,point:actor.hero,life:actor.life});
+    }
+    const target=candidates.sort((a,b)=>Number(b.unit?.kind==='minion')-Number(a.unit?.kind==='minion')||distance(unit,a.point)-distance(unit,b.point))[0];
     if(!target)return;
     hits.push({target,damage:stats.attack});
     unit.attackCooldown=stats.interval;
   }
 
-  private stepMinion(unit:BattlefieldUnit,dt:number,hits:{target:BattlefieldUnit;damage:number}[]){
+  private stepMinion(unit:BattlefieldUnit,dt:number,hits:{target:BattlefieldVictim;damage:number}[]){
     if(unit.lane===null||unit.stunned>0||unit.airborne>0)return;
     const stats=BATTLEFIELD.minions[unit.role as BattlefieldMinionRole];
     const defenders=this.defenders(unit)
-      .filter(target=>distance(unit,target)<=BATTLEFIELD.minionEngageRange)
-      .sort((a,b)=>distance(unit,a)-distance(unit,b));
-    const target=defenders[0]??this.objective(unit);
+      .filter(target=>distance(unit,target.point)<=BATTLEFIELD.minionEngageRange)
+      .sort((a,b)=>distance(unit,a.point)-distance(unit,b.point));
+    const objective=this.objective(unit);
+    const target=defenders[0]??(objective?{unit:objective,point:objective}:undefined);
     if(!target)return;
-    const d=distance(unit,target);
+    const d=distance(unit,target.point);
     if(d>stats.range&&unit.rooted<=0){
       const travel=stats.speed*(1-unit.slow)*dt;
-      if(target.kind==='building'){
-        const targetProgress=this.laneProgress(unit.team,unit.lane,target);
+      if(target.unit?.kind==='building'){
+        const targetProgress=this.laneProgress(unit.team,unit.lane,target.point);
         const currentProgress=this.laneProgress(unit.team,unit.lane,unit);
         const remaining=targetProgress-currentProgress-stats.range;
         if(remaining>1e-6)Object.assign(unit,this.laneAdvance(unit.team,unit.lane,unit,Math.min(travel,remaining)));
-        else Object.assign(unit,towards(unit,target,Math.min(Math.max(0,d-stats.range),travel)));
+        else Object.assign(unit,towards(unit,target.point,Math.min(Math.max(0,d-stats.range),travel)));
       }else{
-        Object.assign(unit,towards(unit,target,Math.min(Math.max(0,d-stats.range),travel)));
+        Object.assign(unit,towards(unit,target.point,Math.min(Math.max(0,d-stats.range),travel)));
       }
       return;
     }
