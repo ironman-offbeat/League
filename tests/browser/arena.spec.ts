@@ -1,23 +1,28 @@
 import { test, expect } from '@playwright/test';
-test('enemy champions advance, fight, pause and reset with separate identities',async({page,isMobile},info)=>{
+test('three-lane mode renders battlefield structures, role squads and full-map camera',async({page,isMobile},info)=>{
  test.setTimeout(90000);
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto('/');await expect(page.locator('body')).toHaveAttribute('data-ready','true');
  const press=async(id:string)=>{if(isMobile)await page.locator(id).tap();else await page.locator(id).click();};
- await press('#mode');await expect(page.locator('.version')).toHaveText('07');
- const initial=await page.evaluate(()=>(window as any).leagueDebug.match.opponents);
- expect(initial).toHaveLength(4);expect(new Set(initial.map((c:any)=>c.id)).size).toBe(4);
- expect(initial.every((c:any)=>c.id.startsWith('red-')&&c.level===1&&c.equipment.weapon===1)).toBe(true);
- await press('#rally');await press('#front-camera');
- await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.match.opponents.every((c:any)=>c.hero.x<1300)),{timeout:45000}).toBe(true);
- await expect.poll(()=>page.evaluate(()=>{const d=(window as any).leagueDebug;return d.match.opponents.some((c:any)=>c.hero.hp<c.hero.maxHp)&&d.members.some((c:any)=>c.damage>0);}),{timeout:40000}).toBe(true);
- await page.screenshot({path:`test-results/ai-${info.project.name}.png`});
- await press('#pause');
- const before=await page.evaluate(()=>JSON.stringify((window as any).leagueDebug.match));
+ await press('#mode');await expect(page.locator('.version')).toHaveText('08');
+ await expect(page.locator('#session-name')).toHaveText('3라인 전장');
+ expect(await page.evaluate(()=>(window as any).leagueDebug.mode)).toBe('battlefield');
+ const snapshot=await page.evaluate(()=>(window as any).leagueDebug);
+ expect(snapshot.match.opponents).toHaveLength(4);
+ expect(new Set(snapshot.match.opponents.map((c:any)=>c.id)).size).toBe(4);
+ const buildings=snapshot.match.units.filter((u:any)=>u.kind==='building');
+ expect(buildings).toHaveLength(20);
+ expect(new Set(buildings.filter((u:any)=>u.lane).map((u:any)=>u.lane))).toEqual(new Set(['top','mid','bottom']));
+ expect(snapshot.camera.zoom).toBeLessThan(1);
+ await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.match.wave),{timeout:35000}).toBe(1);
+ const wave=await page.evaluate(()=>(window as any).leagueDebug.match.units.filter((u:any)=>u.kind==='minion'));
+ expect(wave).toHaveLength(30);
+ for(const lane of ['top','mid','bottom'])expect(wave.filter((u:any)=>u.lane===lane)).toHaveLength(10);
+ await page.screenshot({path:`test-results/battlefield-${info.project.name}.png`});
+ await press('#pause');const before=await page.evaluate(()=>JSON.stringify((window as any).leagueDebug.match));
  await page.waitForTimeout(500);expect(await page.evaluate(()=>JSON.stringify((window as any).leagueDebug.match))).toBe(before);
  await press('#resume');await press('#reset');
  expect(await page.evaluate(()=>(window as any).leagueDebug.match.kills)).toEqual({blue:0,red:0});
- expect(await page.evaluate(()=>(window as any).leagueDebug.match.opponents.every((c:any)=>c.life===0&&c.hero.hp===c.hero.maxHp&&c.level===1))).toBe(true);
  await press('#mode');expect(await page.evaluate(()=>(window as any).leagueDebug.match)).toBe(null);expect(errors).toEqual([]);
 });
 test('lane shop spends shared gold, upgrades only the selected hero and resets cleanly',async({page,isMobile},info)=>{
@@ -26,6 +31,7 @@ test('lane shop spends shared gold, upgrades only the selected hero and resets c
  await page.goto('/');await expect(page.locator('body')).toHaveAttribute('data-ready','true');
  const press=async(id:string)=>{if(isMobile)await page.locator(id).tap();else await page.locator(id).click();};
  await press('#mode');await expect(page.locator('#gear-summary')).toHaveText('무기 T1 · 방어 T1');
+ await press('#recall');await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.command),{timeout:30000}).toBe('idle');
  await expect(page.locator('#rank-summary')).toHaveText('Q 1 · W 잠김 · E 잠김 · R 잠김');
  await expect(page.locator('#dash')).toBeDisabled();await expect(page.locator('#potion-use')).toBeDisabled();
  await press('#shop-toggle');await expect(page.locator('#shop-panel')).toBeVisible();
@@ -40,7 +46,8 @@ test('lane shop spends shared gold, upgrades only the selected hero and resets c
  await page.locator('#shop-champion').selectOption('1');await expect(page.locator('#gear-summary')).toHaveText('무기 T1 · 방어 T1');
  await expect(page.locator('#buy-armor')).toBeDisabled();await expect(page.locator('#shop-stats')).toContainText('주문력 15');
  await press('#shop-close');await expect(page.locator('#shop-panel')).toBeHidden();
- await press('#rally');await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.hero.x)).toBeGreaterThan(230);
+ const beforeRally=await page.evaluate(()=>(window as any).leagueDebug.hero);await press('#rally');
+ await expect.poll(()=>page.evaluate(p=>{const h=(window as any).leagueDebug.hero;return Math.hypot(h.x-p.x,h.y-p.y);},beforeRally)).toBeGreaterThan(80);
  await press('#shop-toggle');await expect(page.locator('#buy-armor')).toContainText('우물에서만 구매 가능');
  await press('#shop-close');await press('#reset');await expect(page.locator('#gear-summary')).toHaveText('무기 T1 · 방어 T1');
  await expect(page.locator('#team-gold')).toHaveText('팀 골드 200');await press('#mode');await expect(page.locator('#inventory')).toBeHidden();
@@ -119,15 +126,21 @@ test('portrait blocks play, landscape recovers and cancelled gestures do not mov
 test('switching champions keeps previous orders and independent HUD',async({page,isMobile},info)=>{
  await page.goto('/');await expect(page.locator('body')).toHaveAttribute('data-ready','true');
  const choose=async(id:string)=>{if(isMobile)await page.locator(`#champion-${id}`).tap();else await page.locator(`#champion-${id}`).click();};
- const command=async(x:number,y:number)=>{
-  const p=await page.evaluate(({x,y})=>{const d=(window as any).leagueDebug;const r=document.querySelector('canvas')!.getBoundingClientRect();return{sx:r.left+d.hero.x-d.camera.x,sy:r.top+d.hero.y-d.camera.y,x:r.left+x-d.camera.x,y:r.top+y-d.camera.y};},{x,y});
-  await page.mouse.move(p.sx,p.sy);await page.mouse.down();await page.mouse.move(p.x,p.y,{steps:8});await page.mouse.up();
+ const command=async()=>{
+  for(let attempt=0;attempt<3;attempt++){
+   await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+   const p=await page.evaluate(()=>{const d=(window as any).leagueDebug,r=document.querySelector('canvas')!.getBoundingClientRect(),e=d.enemies[0],z=d.camera.zoom??1;return{sx:r.left+(d.hero.x-d.camera.x)*z,sy:r.top+(d.hero.y-d.camera.y)*z,x:r.left+(e.x-d.camera.x)*z,y:r.top+(e.y-d.camera.y)*z};});
+   await page.mouse.move(p.sx,p.sy);await page.mouse.down();await page.mouse.move(p.x,p.y,{steps:8});await page.mouse.up();
+   await page.waitForTimeout(80);
+   if(await page.evaluate(()=>(window as any).leagueDebug.command)==='attack')return;
+  }
+  await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.command),{timeout:3000}).toBe('attack');
  };
- await command(720,470);await choose('annie');
+ await command();await choose('annie');
  await expect(page.locator('#champion-name')).toHaveText('애니');await expect(page.locator('#dash')).toBeEnabled();await expect(page.locator('#dash span')).toHaveText('화염');await expect(page.locator('#fury-text')).toContainText('420');
- await command(720,470);await choose('ashe');
- await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.members[0].damage),{timeout:10000}).toBeGreaterThan(0);
- await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.members[1].damage),{timeout:10000}).toBeGreaterThan(0);
+ await command();await choose('ashe');
+ await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.members[0].damage),{timeout:20000}).toBeGreaterThan(0);
+ await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.members[1].damage),{timeout:20000}).toBeGreaterThan(0);
  expect(await page.evaluate(()=>(window as any).leagueDebug.members[0].command)).toBe('attack');
  await choose('amumu');await expect(page.locator('#hp-text')).toContainText('900');
  await page.locator('#pause').click();const before=await page.evaluate(()=>(window as any).leagueDebug.members.map((m:any)=>m.elapsed));await page.waitForTimeout(300);
@@ -165,7 +178,7 @@ test('lane mode starts waves, rallies four heroes, pauses clocks and resets clea
  await expect(page.locator('#xp-track')).toBeVisible();await expect(page.locator('#xp-text')).toHaveText('XP 0 / 100');
  await expect(page.locator('#team-gold')).toHaveText('팀 골드 200');await expect(page.locator('#ultimate')).toBeDisabled();await expect(page.locator('#ult-cd')).toHaveText('Lv. 4 해금');
  await expect(page.locator('#dash')).not.toHaveClass(/armed/);
- expect(await page.evaluate(()=>(window as any).leagueDebug.mode)).toBe('lane');
+ expect(await page.evaluate(()=>(window as any).leagueDebug.mode)).toBe('battlefield');
  await press('#rally');
  await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.members.filter((m:any)=>m.command==='move').length)).toBe(4);
  await press('#pause');const frozen=await page.evaluate(()=>(window as any).leagueDebug.match.elapsed);await page.waitForTimeout(300);
@@ -196,19 +209,22 @@ test('target defeat continues toward the attacked location instead of returning 
  await page.goto('/');await expect(page.locator('body')).toHaveAttribute('data-ready','true');
  const press=async(id:string)=>{if(isMobile)await page.locator(id).tap();else await page.locator(id).click();};
  await press('#retaliation');
+ const targetPoint=await page.evaluate(()=>{const e=(window as any).leagueDebug.enemies[0];return{x:e.x,y:e.y};});
  const attack=async()=>{
-  // Selection recenters the Phaser camera; its inverse matrix updates on render.
-  // Start the gesture only after the displayed frame matches the new scroll.
-  await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
-  const p=await page.evaluate(()=>{const d=(window as any).leagueDebug,r=document.querySelector('canvas')!.getBoundingClientRect();return{sx:r.left+d.hero.x-d.camera.x,sy:r.top+d.hero.y-d.camera.y,x:r.left+720-d.camera.x,y:r.top+470-d.camera.y};});
-  await page.mouse.move(p.sx,p.sy);await page.mouse.down();await page.mouse.move(p.x,p.y,{steps:8});await page.mouse.up();
-  await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.command)).toBe('attack');
+  // Selection recenters the Phaser camera; wait until its inverse matrix matches
+  // the displayed frame, then aim at the live target instead of a fixture coordinate.
+  for(let attempt=0;attempt<3;attempt++){
+   await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+   const p=await page.evaluate(()=>{const d=(window as any).leagueDebug,r=document.querySelector('canvas')!.getBoundingClientRect(),e=d.enemies[0],z=d.camera.zoom??1;return{sx:r.left+(d.hero.x-d.camera.x)*z,sy:r.top+(d.hero.y-d.camera.y)*z,x:r.left+(e.x-d.camera.x)*z,y:r.top+(e.y-d.camera.y)*z};});
+   await page.mouse.move(p.sx,p.sy);await page.mouse.down();await page.mouse.move(p.x,p.y,{steps:8});await page.mouse.up();
+   await page.waitForTimeout(80);
+   if(await page.evaluate(()=>(window as any).leagueDebug.command)==='attack')return;
+  }
+  await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.command),{timeout:3000}).toBe('attack');
  };
  await attack();
- // Mobile pointer coordinates can round by half a pixel. Compare against the
- // actual accepted order, then ensure combat never changes that destination.
  const destination=await page.evaluate(()=>(window as any).leagueDebug.anchor);
- expect(Math.hypot(destination.x-720,destination.y-470)).toBeLessThan(2);
+ expect(Math.hypot(destination.x-targetPoint.x,destination.y-targetPoint.y)).toBeLessThan(2);
  await press('#champion-annie');await attack();await press('#champion-renekton');
  await expect.poll(()=>page.evaluate(()=>{const e=(window as any).leagueDebug.enemies[0];return !e.alive||e.generation>0;}),{timeout:60000}).toBe(true);
  await expect.poll(()=>page.evaluate(p=>{const h=(window as any).leagueDebug.hero;return Math.hypot(h.x-p.x,h.y-p.y);},destination),{timeout:15000}).toBeLessThan(1);

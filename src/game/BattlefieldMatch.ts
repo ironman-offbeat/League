@@ -101,6 +101,14 @@ export class BattlefieldMatch extends Squad {
   teamOf(actor:Combat):BattlefieldTeam{return this.opponents.includes(actor)?'red':'blue';}
   teamMembers(team:BattlefieldTeam){return team==='blue'?this.members:this.opponents;}
 
+  // 09c-2 rendering bridge: full-map fog/bush ownership is introduced in the
+  // next visibility increment. Until then the battlefield is intentionally
+  // fully observable instead of reusing the prototype lane's bush geometry.
+  canSee(_team:BattlefieldTeam,target:Target){return target.visible;}
+  pointVisible(_team:BattlefieldTeam,_point:Point){return true;}
+  terrain(_team:BattlefieldTeam,_point:Point){return 'visible' as const;}
+  canSeePet(_team:BattlefieldTeam,actor:Combat){return !!actor.abilities.pet&&actor.abilities.pet.hp>0;}
+
   constructor(){
     super(false);
     for(const team of ['blue','red'] as const){
