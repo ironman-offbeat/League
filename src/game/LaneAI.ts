@@ -22,6 +22,7 @@ export class LaneAI {
     if(!c.alive){this.state='dead';this.recovering=true;this.shop();return;}
     if(!c.canAct||c.dash||c.abilities.pull)return;
     const visible=c.enemies.filter(t=>t.alive&&!t.protected&&c.canSee(t));
+    const hiddenChase=c.command.kind==='attack'&&!visible.some(t=>t.id===c.command.targetId&&t.generation===c.command.generation)&&!!m.lastSeenById(m.teamOf(c),c.command.targetId,c.command.generation);
     const hostileTower=m.structure(m.teamOf(c)==='red'?'blue':'red','tower');
     const threats=visible.filter(t=>distance(c.hero,t)<=AI_RULES.safeRecall&&(t.kind!=='building'||t===hostileTower&&distance(c.hero,t)<=LANE.tower.range));
     const hp=c.hero.hp/c.hero.maxHp,mana=c.maxMana?c.hero.mana/c.maxMana:1;
@@ -40,6 +41,7 @@ export class LaneAI {
       }
     }
     if(m.elapsed<AI_RULES.start){this.state='waiting';return;}
+    if(hiddenChase){this.state='fight';return;}
     const team=m.teamOf(c),enemyTeam=team==='red'?'blue':'red',direction=team==='red'?-1:1;
     const tower=m.structure(enemyTeam,'tower');
     const safe=(p:Point)=>!tower.alive||m.supported(tower,team)||distance(p,tower)>LANE.tower.range+AI_RULES.towerMargin;
