@@ -88,6 +88,13 @@ export class ArenaScene extends Phaser.Scene {
     this.cameras.main.centerOn(RULES.world.width/2,RULES.world.height/2);
   }
   private frameMode(){if(this.battlefield)this.fitBattlefield();else this.centerHero();}
+  showFront(){
+    if(this.battlefield){this.fitBattlefield();return;}
+    if(this.laneMatch){
+      const front=Math.max(600,...this.laneMatch.units.filter(u=>u.team==='blue'&&u.kind==='minion'&&u.alive).map(u=>u.x));
+      this.cameras.main.setZoom(1);this.cameras.main.centerOn(front,LANE.y);
+    }
+  }
   centerHero() {
     if(this.battlefield)this.cameras.main.setZoom(Math.max(this.battlefieldFitZoom(),.65));
     else this.cameras.main.setZoom(1);
