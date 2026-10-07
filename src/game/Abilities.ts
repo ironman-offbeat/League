@@ -141,6 +141,6 @@ export class Abilities {
     const goal=distance(p,c.hero)>cfg.leash?c.hero:target??c.hero;
     const reach=goal===c.hero?45:cfg.range,d=distance(p,goal);
     if(d>reach){const next=towards(p,goal,Math.min(cfg.speed*dt,d-reach));p.x=next.x;p.y=next.y;}
-    else if(goal===target&&target&&p.cooldown<=0){c.hurt(target,p.damage,'곰',true,'magic','skill',false);p.cooldown=cfg.interval;}
+    else if(goal===target&&target&&p.cooldown<=0){c.summonOffensiveAction();c.hurt(target,p.damage,'곰',true,'magic','skill',false);p.cooldown=cfg.interval;}
   }
 }
