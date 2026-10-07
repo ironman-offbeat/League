@@ -176,7 +176,7 @@ export class BattlefieldAI {
     this.state='advance';
     const lateral=(this.index%2?1:-1)*(25+Math.floor(this.index/2)*28);
     const goal=m.lanePoint(team,lane,Math.max(0,progress),team==='blue'?lateral:-lateral);
-    if(c.command.kind!=='attackMove'||distance(c.command.point,goal)>45)c.attackMove(goal);
+    if(distance(c.hero,goal)>20&&(c.command.kind!=='attackMove'||distance(c.command.point,goal)>45))c.attackMove(goal);
   }
 
   private stepJungle(team:BattlefieldTeam){
