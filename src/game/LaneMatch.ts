@@ -56,6 +56,7 @@ export class LaneMatch extends Squad {
   towerShots=new Map<string,TowerShot>();
   readonly vision=new TeamVision(RULES.world.width,RULES.world.height,LANE.bushes,LANE.vision.cell);
   private exposedUntil=new Map<string,number>();
+  private petExposedUntil=new Map<string,number>();
   private towerFocus=new Map<string,{key:unknown;hits:number}>();
   private towerProvoker(tower:LaneUnit){
     const alliedIds=new Set(this.teamMembers(tower.team).map(c=>c.profile.id));
@@ -99,6 +100,7 @@ export class LaneMatch extends Squad {
       actor.lastSeenResolver=target=>this.lastSeen(team,target);
       actor.memoryResolver=(targetId,generation)=>this.lastSeenById(team,targetId,generation);
       actor.onOffensiveAction=()=>this.expose(actor);
+      actor.onSummonOffensiveAction=()=>this.exposePet(actor);
     }
     this.updateProtection();
     this.refreshVision();
@@ -123,6 +125,14 @@ export class LaneMatch extends Squad {
     return sighting&&sighting.generation===generation?{x:sighting.x,y:sighting.y}:null;
   }
   expose(actor:Combat){this.exposedUntil.set(actor.profile.id,this.elapsed+LANE.vision.attackReveal);}
+  private petSubject(actor:Combat):VisionSubject|null{
+    const pet=actor.abilities.pet;if(!pet||pet.hp<=0)return null;
+    return {id:`pet:${actor.profile.id}`,team:this.teamOf(actor),x:pet.x,y:pet.y,generation:actor.life,alive:true,exposed:(this.petExposedUntil.get(actor.profile.id)??0)>this.elapsed};
+  }
+  canSeePet(team:Team,actor:Combat){
+    const subject=this.petSubject(actor);return !!subject&&this.vision.canSee(team,subject);
+  }
+  exposePet(actor:Combat){this.petExposedUntil.set(actor.profile.id,this.elapsed+LANE.vision.attackReveal);}
   refreshVision(){
     const sources:VisionSource[]=[];
     for(const actor of this.actors)if(actor.alive)sources.push({team:this.teamOf(actor),x:actor.hero.x,y:actor.hero.y,radius:LANE.vision.champion,alive:true});
@@ -130,6 +140,7 @@ export class LaneMatch extends Squad {
     for(const actor of this.actors){const scout=actor.abilities.scout;if(scout)sources.push({team:this.teamOf(actor),x:scout.x,y:scout.y,radius:LANE.vision.scout,alive:true,revealsBush:true});}
     const subjects:VisionSubject[]=[];
     for(const target of [...this.championTargets,...this.units]){const subject=this.subject(target);if(subject)subjects.push(subject);}
+    for(const actor of this.actors){const subject=this.petSubject(actor);if(subject)subjects.push(subject);}
     this.vision.update(sources,subjects,this.elapsed);
   }
   private rewardChampion(victim:Combat){
@@ -205,7 +216,7 @@ export class LaneMatch extends Squad {
       return !!target&&this.canSee(attacker.team,target);
     })){
       candidates.push({actor,point:actor.hero,life:actor.life});
-      if(actor.abilities.pet&&this.pointVisible(attacker.team,actor.abilities.pet))candidates.push({actor,pet:actor.abilities.pet,point:actor.abilities.pet,life:actor.life});
+      if(actor.abilities.pet&&this.canSeePet(attacker.team,actor))candidates.push({actor,pet:actor.abilities.pet,point:actor.abilities.pet,life:actor.life});
     }
     return candidates;
   }
