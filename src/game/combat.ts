@@ -23,6 +23,7 @@ export class Combat {
   onDeath?:()=>void;
   visibilityResolver?:(target:Dummy)=>boolean;
   lastSeenResolver?:(target:Dummy)=>Point|null;
+  memoryResolver?:(targetId:string,generation:number)=>Point|null;
   onOffensiveAction?:()=>void;
   // Entity IDs distinguish teams; art keys continue to identify the original champion.
   visualId:string;
@@ -59,6 +60,7 @@ export class Combat {
   get canAct(){return this.alive&&this.hero.stunned<=0&&this.hero.airborne<=0;}
   canSee(e:Dummy){return this.visibilityResolver?this.visibilityResolver(e):e.visible||e.revealed>0;}
   lastSeenFor(e:Dummy){return this.lastSeenResolver?.(e)??(this.canSee(e)?{x:e.x,y:e.y}:null);}
+  memoryFor(targetId:string,generation:number){return this.memoryResolver?.(targetId,generation)??null;}
   offensiveAction(){this.onOffensiveAction?.();}
   castSkill(slot:SkillSlot,point?:Point){
     const cast=this.abilities.cast(slot,point);
@@ -252,15 +254,26 @@ export class Combat {
     let target: Dummy | undefined;
     if (this.command.kind === 'attack') {
       const order = this.command;
-      target = this.enemies.find(e => e.id === order.targetId && e.generation===order.generation && e.alive && !e.protected);
-      if (!target) { this.pending = null; this.command = { kind: 'attackMove', point:{...order.point} }; }
-      else if (!this.canSee(target)) {
+      const current = this.enemies.find(e => e.id === order.targetId && !e.protected);
+      if (!current || current.generation!==order.generation || !current.alive) {
         this.pending = null;
-        const sighting=this.lastSeenFor(target);if(sighting)this.lastSeen=sighting;
+        const memory=this.memoryResolver?this.memoryFor(order.targetId,order.generation):this.lastSeen;
+        if(memory){
+          this.lastSeen={...memory};
+          this.travel(this.lastSeen,this.stats.speed*dt);
+          if(distance(this.hero,this.lastSeen)<.1)this.command={kind:'attackMove',point:{...order.point}};
+          return;
+        }
+        this.command={kind:'attackMove',point:{...order.point}};
+      } else if (!this.canSee(current)) {
+        target=current;
+        this.pending = null;
+        const sighting=this.lastSeenFor(current);if(sighting)this.lastSeen=sighting;
         if (this.lastSeen) this.travel(this.lastSeen, this.stats.speed * dt);
         if (!this.lastSeen || distance(this.hero, this.lastSeen) < 0.1) this.command = { kind:'attackMove',point:{...order.point} };
         return;
       } else {
+        target=current;
         this.lastSeen = { x: target.x, y: target.y };
         // Fight enemies encountered on the route; the explicit target wins when in range.
         if(distance(this.hero,target)>this.stats.range+.001)target=this.routeTarget()??target;
@@ -297,15 +310,16 @@ export class Combat {
       return;
     }
     if(this.abilities.auto(target))return;
-    const nearby = this.enemies.filter(e => e.alive && skillTarget(e) && this.canSee(e) && distance(this.hero,e) <= RULES.q.range);
+    const visibleNearby = this.enemies.filter(e => e.alive && skillTarget(e) && this.canSee(e) && distance(this.hero,e) <= RULES.q.range);
+    const qHits = this.enemies.filter(e => e.alive && skillTarget(e) && distance(this.hero,e) <= RULES.q.range);
     const canW = skillTarget(target) && this.profile.kit === 'fury' && this.ranks.W>0 && this.cooldown.w <= 0 && distance(this.hero,target) <= this.stats.range + .001;
-    if (this.profile.kit === 'fury' && this.ranks.Q>0 && this.cooldown.q <= 0 && nearby.length && (this.hero.hp / this.hero.maxHp <= 0.5 || !canW)) {
+    if (this.profile.kit === 'fury' && this.ranks.Q>0 && this.cooldown.q <= 0 && visibleNearby.length && (this.hero.hp / this.hero.maxHp <= 0.5 || !canW)) {
       const empowered = this.hero.fury >= 50;
       if (empowered) this.hero.fury -= 50;
-      else this.hero.fury = Math.min(100, this.hero.fury + Math.min(15, nearby.length * 5));
-      for (const enemy of nearby) this.hurt(enemy, this.furySkills.q.damage * (empowered ? 1.5 : 1), 'Q');
+      else this.hero.fury = Math.min(100, this.hero.fury + Math.min(15, qHits.length * 5));
+      for (const enemy of qHits) this.hurt(enemy, this.furySkills.q.damage * (empowered ? 1.5 : 1), 'Q');
       const before = this.hero.hp;
-      this.hero.hp = Math.min(this.hero.maxHp, this.hero.hp + Math.min(this.furySkills.q.healCap, nearby.reduce((sum,e)=>sum+(e.kind==='minion'?this.furySkills.q.minionHeal:this.furySkills.q.heal),0)) * (empowered ? 2 : 1));
+      this.hero.hp = Math.min(this.hero.maxHp, this.hero.hp + Math.min(this.furySkills.q.healCap, qHits.reduce((sum,e)=>sum+(e.kind==='minion'?this.furySkills.q.minionHeal:this.furySkills.q.heal),0)) * (empowered ? 2 : 1));
       if (this.hero.hp > before) this.events.push({ kind: 'heal', point: { ...this.hero }, amount: this.hero.hp-before });
       this.events.push({ kind: 'slash', point: { ...this.hero } });
       this.cooldown.q = RULES.q.cooldown;
@@ -323,15 +337,15 @@ export class Combat {
       .sort((a,b)=>Number(a.kind==='building')-Number(b.kind==='building')||distance(this.hero,a)-distance(this.hero,b))[0];
   }
   private basicHit(target: Dummy, raw: number, source: string) {
-    this.offensiveAction();
     if (!this.profile.projectileSpeed) { this.hurt(target, raw, source, true, 'physical', 'basic');this.abilities.onBasicHit(target); return; }
+    this.offensiveAction();
     this.projectiles.push({ x:this.hero.x, y:this.hero.y, target, generation:target.generation, damage:raw });
   }
   private stepProjectiles(dt: number) {
     this.projectiles = this.projectiles.filter(p => {
       if (!p.target.alive || p.target.generation !== p.generation) return false;
       const d = distance(p, p.target), travel = this.profile.projectileSpeed * dt;
-      if (d <= travel) { this.hurt(p.target, p.damage, '기본 공격', true, 'physical', 'basic');this.abilities.onBasicHit(p.target); return false; }
+      if (d <= travel) { this.hurt(p.target, p.damage, '기본 공격', true, 'physical', 'basic', false);this.abilities.onBasicHit(p.target); return false; }
       p.x += (p.target.x-p.x)/d*travel; p.y += (p.target.y-p.y)/d*travel;
       return true;
     });
@@ -346,9 +360,9 @@ export class Combat {
     this.hero.x += (point.x-this.hero.x)*scale;
     this.hero.y += (point.y-this.hero.y)*scale;
   }
-  hurt(target: Dummy, raw: number, source: string, show = true, type:DamageType='physical', kind:HitKind='skill') {
+  hurt(target: Dummy, raw: number, source: string, show = true, type:DamageType='physical', kind:HitKind='skill', exposeSource=true) {
     if(!target.alive||target.protected||(target.kind==='building'&&kind!=='basic'))return;
-    if(raw>0){this.offensiveAction();target.alert=SKILLS.retaliation.alert;target.aggro=this.profile.id;this.lastCombat=this.elapsed;}
+    if(raw>0){if(exposeSource)this.offensiveAction();target.alert=SKILLS.retaliation.alert;target.aggro=this.profile.id;this.lastCombat=this.elapsed;}
     const amount=damageTarget(target,raw*(type==='magic'&&target.marked>0?1+SKILLS.curse.passive.amplify:1),type,kind,show);
     if(!amount)return;
     this.damage += amount; this.lastCombat = this.elapsed;
