@@ -3,6 +3,8 @@ import { Combat } from './combat.ts';
 import { CHAMPIONS } from './champions.ts';
 import { RULES, distance } from './config.ts';
 import type { Point } from './config.ts';
+import { MAP_LAYOUT, LANE_IDS, formationPoint, laneRoute, laneTowerPoint, mirrorPoint, routeLength, routePointAt, routeProgress } from './mapLayout.ts';
+import type { LaneId } from './mapLayout.ts';
 import { TeamVision } from './vision.ts';
 import type { VisionSource, VisionSubject } from './vision.ts';
 import { freshStatus, mitigate, towards } from './effects.ts';
@@ -23,16 +25,13 @@ export const LANE = {
   melee:{hp:350,armor:10,range:35,attack:22,interval:1.2,speed:70},
   ranged:{hp:220,armor:0,range:145,attack:27,interval:1.5,speed:70},
   siege:{hp:650,armor:15,range:175,attack:55,interval:2,speed:60},
-  spawns:[{x:180,y:470},{x:115,y:435},{x:115,y:565},{x:180,y:530}],
+  spawns:MAP_LAYOUT.championSpawns,
   vision:{champion:340,minion:235,tower:310,scout:260,cell:80,attackReveal:1.5},
-  bushes:[
-    {id:'lane-north',x:650,y:390,width:260,height:90},
-    {id:'lane-south',x:690,y:520,width:260,height:90},
-  ],
+  bushes:MAP_LAYOUT.bushes,
 } as const;
 export type Team='blue'|'red';
 type MinionClass='melee'|'ranged'|'siege';
-export type LaneUnit=Target & {team:Team;kind:'minion'|'building';role:MinionClass|'tower'|'nexus'};
+export type LaneUnit=Target & {team:Team;kind:'minion'|'building';role:MinionClass|'tower'|'nexus';lane:LaneId|null;routeIndex:number};
 type Victim={point:Point;unit?:LaneUnit;actor?:Combat;pet?:Pet;life?:number};
 type TowerShot={tower:LaneUnit;target:Victim;remaining:number};
 export type MatchResult='victory'|'defeat'|'draw';
@@ -68,12 +67,16 @@ export class LaneMatch extends Squad {
   constructor(options:{enemyChampions?:boolean;ai?:boolean}={}){
     super(false);
     for(const team of ['blue','red'] as const){
-      this.units.push(this.createUnit(team,'tower',team==='blue'?440:1160,LANE.y));
-      this.units.push(this.createUnit(team,'nexus',team==='blue'?100:1500,LANE.y));
+      for(const lane of LANE_IDS){
+        const point=laneTowerPoint(lane,team);
+        this.units.push(this.createUnit(team,'tower',point.x,point.y,lane));
+      }
+      const base=MAP_LAYOUT.bases[team];
+      this.units.push(this.createUnit(team,'nexus',base.x,base.y));
     }
     this.enemies.push(...this.units.filter(u=>u.team==='red'));
     this.members=CHAMPIONS.map((profile,i)=>{
-      const c=new Combat({...profile,spawn:{...LANE.spawns[i]}},this.enemies);
+      const c=new Combat({...profile,spawn:{...MAP_LAYOUT.championSpawns[i]}},this.enemies);
       c.progression.enabled=true;
       c.initializeEquipment();
       c.autoTargetAllowed=target=>target.kind!=='building'||this.supported(target,'blue');
@@ -84,7 +87,7 @@ export class LaneMatch extends Squad {
     this.championTargets.push(...blue);this.redTargets.push(...blue);
     if(options.enemyChampions!==false){
       this.opponents=CHAMPIONS.map((profile,i)=>{
-        const c=new Combat({...profile,id:`red-${profile.id}`,spawn:{x:1600-LANE.spawns[i].x,y:1000-LANE.spawns[i].y}},this.redTargets);
+        const c=new Combat({...profile,id:`red-${profile.id}`,spawn:mirrorPoint(MAP_LAYOUT.championSpawns[i])},this.redTargets);
         c.visualId=profile.id;c.hero.facing=Math.PI;c.progression.enabled=true;c.initializeEquipment();
         c.autoTargetAllowed=target=>target.kind!=='building'||this.supported(target,'red');
         return c;
@@ -173,9 +176,9 @@ export class LaneMatch extends Squad {
     }else c.equipment.potion=item;
     return true;
   }
-  private createUnit(team:Team,role:LaneUnit['role'],x:number,y:number):LaneUnit {
+  private createUnit(team:Team,role:LaneUnit['role'],x:number,y:number,lane:LaneId|null=null,routeIndex=0):LaneUnit {
     const stats=LANE[role];
-    const unit:LaneUnit={id:`${team}-${role}-${++this.serial}`,team,role,kind:role==='tower'||role==='nexus'?'building':'minion',x,y,
+    const unit:LaneUnit={id:`${team}-${role}-${++this.serial}`,team,role,lane,routeIndex,kind:role==='tower'||role==='nexus'?'building':'minion',x,y,
       hp:stats.hp,maxHp:stats.hp,armor:stats.armor,magicResist:0,alive:true,visible:true,
       revealed:0,alert:0,aggro:null,attackCooldown:0,respawn:Infinity,generation:0,...freshStatus()};
     unit.onDeath=()=>this.reward(unit);
@@ -189,27 +192,63 @@ export class LaneMatch extends Squad {
     const eligible=nearby.filter(c=>!c.progression.capped);
     for(const c of eligible)c.gainExperience(reward.xp/eligible.length);
   }
-  supported(target:Point,attacker:Team){return this.units.some(u=>u.alive&&u.team===attacker&&u.kind==='minion'&&distance(u,target)<=LANE.supportRange);}
-  structure(team:Team,role:'tower'|'nexus'){return this.units.find(u=>u.team===team&&u.role===role)!;}
+  laneOf(c:Combat):LaneId{
+    const index=this.teamMembers(this.teamOf(c)).indexOf(c);
+    return MAP_LAYOUT.championLanes[index]??'mid';
+  }
+  supported(target:Point,attacker:Team,lane?:LaneId){
+    const targetLane=lane??(target as Partial<LaneUnit>).lane??undefined;
+    return this.units.some(u=>u.alive&&u.team===attacker&&u.kind==='minion'&&(!targetLane||u.lane===targetLane)&&distance(u,target)<=LANE.supportRange);
+  }
+  structure(team:Team,role:'tower'|'nexus',lane:LaneId='mid'){
+    return this.units.find(u=>u.team===team&&u.role===role&&(role==='nexus'||u.lane===lane))!;
+  }
+  structures(team:Team,role:'tower'|'nexus'){return this.units.filter(u=>u.team===team&&u.role===role);}
+  laneFrontProgress(team:Team,lane:LaneId){
+    const route=laneRoute(lane,team),minions=this.units.filter(u=>u.alive&&u.team===team&&u.kind==='minion'&&u.lane===lane);
+    return minions.length?Math.max(...minions.map(u=>routeProgress(route,u))):Math.min(220,routeLength(route)*.16);
+  }
+  advancePoint(team:Team,lane:LaneId,backoff=0){
+    const route=laneRoute(lane,team);
+    return routePointAt(route,Math.max(0,this.laneFrontProgress(team,lane)-backoff));
+  }
+  retreatPoint(team:Team,lane:LaneId,from:Point,amount:number){
+    const route=laneRoute(lane,team);
+    return routePointAt(route,Math.max(0,routeProgress(route,from)-amount));
+  }
   private updateProtection(){
     for(const u of this.units.filter(u=>u.kind==='building')){
-      u.protected=u.role==='nexus'&&this.structure(u.team,'tower').alive;
-      u.damageScale=this.supported(u,u.team==='blue'?'red':'blue')?1:.25;
+      u.protected=u.role==='nexus'&&this.structures(u.team,'tower').every(t=>t.alive);
+      u.damageScale=this.supported(u,u.team==='blue'?'red':'blue',u.lane??undefined)?1:.25;
     }
   }
   private spawnWave(){
     this.wave++;
     const roles:MinionClass[]=['melee','melee','melee','ranged','ranged'];
     if(this.wave%3===0)roles.push('siege');
-    for(const team of ['blue','red'] as const)roles.forEach((role,i)=>{
-      const direction=team==='blue'?1:-1;
-      const unit=this.createUnit(team,role,(team==='blue'?160:1440)-direction*Math.floor(i/3)*35,LANE.y+(i%3-1)*32);
+    for(const lane of LANE_IDS)for(const team of ['blue','red'] as const)roles.forEach((role,i)=>{
+      const point=formationPoint(lane,team,i);
+      const unit=this.createUnit(team,role,point.x,point.y,lane,1);
       this.units.push(unit);(team==='red'?this.enemies:this.redTargets).push(unit);
     });
   }
+  private laneCompatible(attacker:LaneUnit,defender:LaneUnit){
+    if(attacker.kind!=='minion')return true;
+    if(defender.role==='nexus')return true;
+    return defender.lane===attacker.lane;
+  }
+  private advanceMinion(unit:LaneUnit,step:number){
+    if(!unit.lane||step<=0)return;
+    const route=laneRoute(unit.lane,unit.team);
+    let index=Math.max(1,Math.min(unit.routeIndex,route.length-1));
+    while(index<route.length-1&&distance(unit,route[index])<16)index++;
+    unit.routeIndex=index;
+    const point=route[index],d=distance(unit,point);
+    if(d>0)Object.assign(unit,towards(unit,point,Math.min(d,step)));
+  }
   private valid(v:Victim){return v.unit?v.unit.alive:!!v.actor?.alive&&v.actor.life===v.life&&(!v.pet||(v.actor.abilities.pet===v.pet&&v.pet.hp>0));}
   private defenders(attacker:LaneUnit):Victim[]{
-    const candidates:Victim[]=this.units.filter(u=>u.team!==attacker.team&&u.alive&&!u.protected&&this.canSee(attacker.team,u)).map(unit=>({unit,point:unit}));
+    const candidates:Victim[]=this.units.filter(u=>u.team!==attacker.team&&u.alive&&!u.protected&&this.laneCompatible(attacker,u)&&this.canSee(attacker.team,u)).map(unit=>({unit,point:unit}));
     for(const actor of this.teamMembers(attacker.team==='red'?'blue':'red').filter(c=>{
       if(!c.alive)return false;
       const target=this.championTargets.find(t=>t.id===c.profile.id);
@@ -238,9 +277,17 @@ export class LaneMatch extends Squad {
     for(const brain of this.ai)brain.step(dt);
     for(const c of this.actors){
       // Automatic siege stops when its escort dies. Explicit attack orders remain risky by choice.
-      const team=this.teamOf(c),tower=this.structure(team==='blue'?'red':'blue','tower');
-      if(c.alive&&c.command.kind==='idle'&&tower.alive&&!this.supported(tower,team)&&distance(c.hero,tower)<=LANE.tower.range){
-        c.move({x:tower.x+(team==='blue'?-1:1)*(LANE.tower.range+50),y:c.hero.y});
+      // Check every hostile lane tower so a roaming champion cannot idle under an off-lane tower.
+      const team=this.teamOf(c),enemyTeam=team==='blue'?'red':'blue';
+      const tower=this.structures(enemyTeam,'tower')
+        .filter(t=>t.alive&&!this.supported(t,team,t.lane??undefined)&&distance(c.hero,t)<=LANE.tower.range)
+        .sort((a,b)=>distance(c.hero,a)-distance(c.hero,b))[0];
+      if(c.alive&&c.command.kind==='idle'&&tower){
+        const d=Math.max(1,distance(c.hero,tower));
+        c.move({
+          x:tower.x+(c.hero.x-tower.x)/d*(LANE.tower.range+50),
+          y:tower.y+(c.hero.y-tower.y)/d*(LANE.tower.range+50),
+        });
       }
       c.step(dt,false);
     }
@@ -277,12 +324,14 @@ export class LaneMatch extends Squad {
       if(unit.stunned>0||unit.airborne>0)continue;
       const stats=LANE[unit.role as MinionClass];
       const defenders=this.defenders(unit);
-      const objective=this.units.filter(u=>u.team!==unit.team&&u.kind==='building'&&u.alive&&!u.protected)
-        .sort((a,b)=>distance(unit,a)-distance(unit,b))[0];
-      const target=defenders.filter(v=>v.unit?.kind!=='building'&&distance(unit,v.point)<=220).sort((a,b)=>distance(unit,a.point)-distance(unit,b.point))[0]
-        ??defenders.filter(v=>v.unit?.kind==='building').sort((a,b)=>distance(unit,a.point)-distance(unit,b.point))[0]
-        ??(objective?{unit:objective,point:objective}:undefined);
-      if(!target)continue;
+      const target=defenders.filter(v=>v.unit?.kind!=='building'&&distance(unit,v.point)<=220)
+        .sort((a,b)=>distance(unit,a.point)-distance(unit,b.point))[0]
+        ??defenders.filter(v=>v.unit?.kind==='building'&&distance(unit,v.point)<=stats.range)
+          .sort((a,b)=>distance(unit,a.point)-distance(unit,b.point))[0];
+      if(!target){
+        if(unit.rooted<=0)this.advanceMinion(unit,stats.speed*(1-unit.slow)*dt);
+        continue;
+      }
       const d=distance(unit,target.point);
       if(d>stats.range){if(unit.rooted<=0)Object.assign(unit,towards(unit,target.point,Math.min(d-stats.range,stats.speed*(1-unit.slow)*dt)));}
       else if(unit.attackCooldown<=0){hits.push({target,damage:stats.attack});unit.attackCooldown=stats.interval;}

@@ -5,7 +5,8 @@ import type { Target } from './targets.ts';
 import type { Point } from './config.ts';
 import { distance } from './config.ts';
 
-// Provisional one-lane decisions. No bonus health, income, damage or cooldowns.
+// Provisional lane decisions. Top/mid/bot use route progress; jungle routing follows in the next map phase.
+ // No bonus health, income, damage or cooldowns.
 export const AI_RULES={interval:.3,engage:350,retreatHP:.3,potionHP:.65,recoverHP:.9,recoverMana:.6,safeRecall:380,recallQuiet:2,towerMargin:55,start:10} as const;
 export type AIState='waiting'|'advance'|'fight'|'retreat'|'recall'|'recover'|'dead';
 export class LaneAI {
@@ -23,8 +24,9 @@ export class LaneAI {
     if(!c.canAct||c.dash||c.abilities.pull)return;
     const visible=c.enemies.filter(t=>t.alive&&!t.protected&&c.canSee(t));
     const order=c.command;
-    const hiddenChase=order.kind==='attack'&&!visible.some(t=>t.id===order.targetId&&t.generation===order.generation)&&!!m.lastSeenById(m.teamOf(c),order.targetId,order.generation);
-    const hostileTower=m.structure(m.teamOf(c)==='red'?'blue':'red','tower');
+    const team=m.teamOf(c),lane=m.laneOf(c),enemyTeam=team==='red'?'blue':'red';
+    const hiddenChase=order.kind==='attack'&&!visible.some(t=>t.id===order.targetId&&t.generation===order.generation)&&!!m.lastSeenById(team,order.targetId,order.generation);
+    const hostileTower=m.structure(enemyTeam,'tower',lane);
     const threats=visible.filter(t=>distance(c.hero,t)<=AI_RULES.safeRecall&&(t.kind!=='building'||t===hostileTower&&distance(c.hero,t)<=LANE.tower.range));
     const hp=c.hero.hp/c.hero.maxHp,mana=c.maxMana?c.hero.mana/c.maxMana:1;
     if(hp<AI_RULES.potionHP)c.usePotion();
@@ -42,29 +44,26 @@ export class LaneAI {
       }
     }
     if(m.elapsed<AI_RULES.start){this.state='waiting';return;}
-    if(hiddenChase){this.state='fight';return;}
-    const team=m.teamOf(c),enemyTeam=team==='red'?'blue':'red',direction=team==='red'?-1:1;
-    const tower=m.structure(enemyTeam,'tower');
+    const tower=m.structure(enemyTeam,'tower',lane);
     const safe=(p:Point)=>!tower.alive||m.supported(tower,team)||distance(p,tower)>LANE.tower.range+AI_RULES.towerMargin;
-    // Never continue a chase under an unescorted tower, even if a target has moved there.
-    if(!safe(c.hero)){this.state='retreat';this.move({x:tower.x-direction*(LANE.tower.range+AI_RULES.towerMargin+25),y:c.hero.y});return;}
+    // Tower safety outranks memory pursuit. A hidden target's last-seen position
+    // must never keep the AI fighting under an unescorted hostile tower.
+    if(!safe(c.hero)){this.state='retreat';this.move(m.retreatPoint(team,lane,c.hero,LANE.tower.range+AI_RULES.towerMargin));return;}
+    if(hiddenChase){this.state='fight';return;}
     const hostileHeroes=visible.filter(t=>t.kind==='champion'&&distance(c.hero,t)<=AI_RULES.engage);
     const allies=m.teamMembers(team).filter(a=>a.alive&&distance(a.hero,c.hero)<=AI_RULES.engage);
-    if(hostileHeroes.length>allies.length+1){this.state='retreat';this.move({x:c.hero.x-direction*180,y:LANE.y});return;}
+    if(hostileHeroes.length>allies.length+1){this.state='retreat';this.move(m.retreatPoint(team,lane,c.hero,180));return;}
     const candidates=visible.filter(t=>t.kind!=='building'&&distance(c.hero,t)<=AI_RULES.engage&&safe(t));
     candidates.sort((a,b)=>Number(b.kind==='champion')-Number(a.kind==='champion')||distance(c.hero,a)-distance(c.hero,b));
     const target=candidates[0];
     if(target){
       this.state='fight';this.attack(target);this.skills(target);return;
     }
-    const escort=m.units.filter(u=>u.alive&&u.team===team&&u.kind==='minion');
-    const front=escort.length?escort.reduce((a,b)=>direction*a.x>direction*b.x?a:b).x:team==='red'?1060:540;
-    let x=front-direction*(c.stats.range>100?95:35);
-    if(tower.alive&&!m.supported(tower,team))x=team==='red'?Math.max(x,tower.x+LANE.tower.range+AI_RULES.towerMargin+20):Math.min(x,tower.x-LANE.tower.range-AI_RULES.towerMargin-20);
     const building=tower.alive?tower:m.structure(enemyTeam,'nexus');
-    if(m.supported(building,team)&&distance(c.hero,building)<=AI_RULES.engage){this.state='fight';this.attack(building);return;}
+    if(m.supported(building,team,tower.alive?lane:undefined)&&distance(c.hero,building)<=AI_RULES.engage){this.state='fight';this.attack(building);return;}
     this.state='advance';
-    const goal={x,y:LANE.y+(this.index%2?1:-1)*(25+Math.floor(this.index/2)*28)};
+    const backoff=(c.stats.range>100?95:35)+(this.index%2)*18;
+    const goal=m.advancePoint(team,lane,backoff);
     if(c.command.kind!=='attackMove'||distance(c.command.point,goal)>45)c.attackMove(goal);
   }
   private move(point:Point){const c=this.actor;if(c.command.kind!=='move'||distance(c.command.point,point)>20)c.move(point);}

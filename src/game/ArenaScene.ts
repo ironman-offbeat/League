@@ -7,6 +7,7 @@ import { SKILLS } from './skillConfig.ts';
 import { Squad } from './Squad.ts';
 import { RULES, distance } from './config.ts';
 import type { Point } from './config.ts';
+import { MAP_LAYOUT, LANE_IDS, LANE_LABELS, laneRoute } from './mapLayout.ts';
 
 export class ArenaScene extends Phaser.Scene {
   squad:Squad = new Squad(true);
@@ -88,9 +89,11 @@ export class ArenaScene extends Phaser.Scene {
   restartTraining(){this.startMode(!!this.match);}
   rally(){
     if(!this.match||this.blocked)return;
-    const front=Math.max(600,...this.match.units.filter(u=>u.team==='blue'&&u.kind==='minion'&&u.alive).map(u=>u.x-60));
-    this.squad.members.forEach((c,i)=>c.move({x:Math.min(1390,front)-(i%2)*55,y:LANE.y+(Math.floor(i/2)*2-1)*42}));
-    this.notify('전선 집결 · 각 챔피언의 이동·공격 명령으로 조정할 수 있습니다.');
+    this.squad.members.forEach((c,i)=>{
+      const lane=this.match!.laneOf(c),goal=this.match!.advancePoint('blue',lane,45+i*10);
+      c.move(goal);
+    });
+    this.notify('3개 라인 전선 집결 · 각 챔피언의 이동·공격 명령으로 조정할 수 있습니다.');
   }
   dashToScreen(x: number,y: number,slot:SkillSlot='manual') {
     const rect = this.game.canvas.getBoundingClientRect();
@@ -246,9 +249,10 @@ export class ArenaScene extends Phaser.Scene {
       }
       if(this.combat.command.kind==='attack'&&this.combat.command.targetId===u.id&&u.alive){g.lineStyle(2,0xffdf9c);g.strokeCircle(u.x,u.y,u.kind==='building'?46:23);}
     }
-    match.units.filter(u=>u.team==='red'&&u.kind==='building').forEach((u,i)=>{const visible=match.canSee('blue',u);this.labels[i].setVisible(visible);if(visible)this.labels[i].setPosition(u.x,u.y-78).setText(`${u.role==='tower'?'적 타워':'적 넥서스'} · ${!u.alive?'파괴됨':u.protected?'타워 보호':u.damageScale===.25?'공성 피해 25%':Math.ceil(u.hp)}`);});
+    const redBuildings=match.units.filter(u=>u.team==='red'&&u.kind==='building');
+    redBuildings.forEach((u,i)=>{const visible=match.canSee('blue',u);this.labels[i].setVisible(visible);if(visible)this.labels[i].setPosition(u.x,u.y-78).setText(`${u.role==='tower'?`적 ${u.lane?LANE_LABELS[u.lane]:''} 타워`:'적 넥서스'} · ${!u.alive?'파괴됨':u.protected?'타워 보호':u.damageScale===.25?'공성 피해 25%':Math.ceil(u.hp)}`);});
     match.opponents.forEach((c,i)=>{
-      const label=this.labels[i+2],h=c.hero,target=match.championTargets.find(t=>t.id===c.profile.id)!;
+      const label=this.labels[i+redBuildings.length],h=c.hero,target=match.championTargets.find(t=>t.id===c.profile.id)!;
       const visible=match.canSee('blue',target);label.setVisible(visible);
       if(visible)label.setPosition(h.x,h.y-64).setText(c.alive?`적 ${c.profile.name} · Lv.${c.progression.level}${h.stunned>0?' · 기절':h.rooted>0?' · 속박':h.slowRemaining>0?' · 둔화':''}`:`${c.profile.name} · 부활 ${Math.ceil(c.respawnRemaining)}초`);
     });
@@ -279,12 +283,19 @@ export class ArenaScene extends Phaser.Scene {
     const g=this.add.graphics();this.mapLayer.add(g);const w=RULES.world.width,h=RULES.world.height;
     if(this.match){
       g.fillStyle(0x263d32);g.fillRect(0,0,w,h);
-      g.fillStyle(0x62604a);g.fillRoundedRect(60,LANE.y-110,w-120,220,65);
-      g.lineStyle(2,0xa49b6b,.25);g.lineBetween(100,LANE.y,1500,LANE.y);
-      for(let x=90;x<w-60;x+=48)for(let y=LANE.y-90;y<LANE.y+100;y+=45){g.lineStyle(1,0xabb19b,.12);g.strokeRoundedRect(x,y,40,35,5);}
-      for(const x of [140,1460]){g.fillStyle(x<800?0x345e60:0x664c48,.8);g.fillCircle(x,LANE.y,100);}
+      for(const lane of LANE_IDS){
+        const route=laneRoute(lane,'blue');
+        g.lineStyle(lane==='mid'?150:132,0x62604a,.72);
+        for(let i=1;i<route.length;i++)g.lineBetween(route[i-1].x,route[i-1].y,route[i].x,route[i].y);
+        g.lineStyle(2,0xa49b6b,.28);
+        for(let i=1;i<route.length;i++)g.lineBetween(route[i-1].x,route[i-1].y,route[i].x,route[i].y);
+      }
+      for(const [team,p] of Object.entries(MAP_LAYOUT.bases)){
+        g.fillStyle(team==='blue'?0x345e60:0x664c48,.82);g.fillCircle(p.x,p.y,105);
+        g.lineStyle(2,0xb8b27c,.35);g.strokeCircle(p.x,p.y,90);
+      }
       for(const bush of LANE.bushes){g.fillStyle(0x173c29,.9);g.fillRoundedRect(bush.x,bush.y,bush.width,bush.height,28);g.lineStyle(2,0x436d48,.65);g.strokeRoundedRect(bush.x,bush.y,bush.width,bush.height,28);}
-      for(const p of LANE.spawns){g.lineStyle(1,0x84c9ab,.5);g.strokeCircle(p.x,p.y,40);}
+      for(const p of LANE.spawns){g.lineStyle(1,0x84c9ab,.5);g.strokeCircle(p.x,p.y,38);}
       return;
     }
     g.fillStyle(0x263d32);g.fillRect(0,0,w,h);
