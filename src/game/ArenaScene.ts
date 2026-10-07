@@ -265,6 +265,36 @@ export class ArenaScene extends Phaser.Scene {
     for(const id of this.lastPositions.keys())if(!liveIds.has(id))this.lastPositions.delete(id);
     for(const shot of match.towerShots.values()){g.lineStyle(3,0xef9273,.8);g.lineBetween(shot.tower.x,shot.tower.y,shot.target.point.x,shot.target.point.y);g.strokeCircle(shot.target.point.x,shot.target.point.y,25);}
   }
+  private renderBattlefield(){
+    const g=this.actors,match=this.battlefield!;
+    for(const u of match.units){
+      const color=u.team==='blue'?0x79b9cc:0xd98b78;
+      const previous=this.lastPositions.get(u.id);
+      const moving=!!previous&&distance(previous,u)>.01;
+      const attacking=u.attackCooldown>0;
+      const custom=this.visuals?.draw(u,`unit.${u.team}.${u.role}`,u,!u.alive?'death':moving?'walk':attacking?'attack':'idle',u.team==='blue'?0:Math.PI);
+      this.lastPositions.set(u.id,{x:u.x,y:u.y});
+      if(u.kind==='building'){
+        if(!u.alive){g.lineStyle(2,color,.25);g.strokeCircle(u.x,u.y,25);continue;}
+        if(u.role==='outer'||u.role==='inner'){g.lineStyle(1,color,.18);g.strokeCircle(u.x,u.y,BATTLEFIELD.structures[u.role].range);}
+        if(!custom){
+          if(u.role==='nexus'){g.fillStyle(color,.28);g.fillCircle(u.x,u.y,46);g.fillStyle(color);g.fillCircle(u.x,u.y,27);g.lineStyle(3,0xe7ddb4,.7);g.strokeCircle(u.x,u.y,34);}
+          else if(u.role==='inhibitor'){g.fillStyle(color,.85);g.fillRoundedRect(u.x-22,u.y-22,44,44,8);g.lineStyle(3,0xe7ddb4,.65);g.strokeCircle(u.x,u.y,30);}
+          else {const size=u.role==='outer'?32:27;g.fillStyle(color,.25);g.fillCircle(u.x,u.y,size+10);g.fillStyle(color);g.fillRoundedRect(u.x-size*.55,u.y-size,size*1.1,size*2,7);}
+        }
+        if(u.protected){g.lineStyle(3,0xebe3b6,.75);g.strokeCircle(u.x,u.y,u.role==='nexus'?54:40);}
+        g.fillStyle(0x112822);g.fillRect(u.x-38,u.y-52,76,7);g.fillStyle(color);g.fillRect(u.x-37,u.y-51,74*Math.max(0,u.hp/u.maxHp),5);
+      }else if(u.alive){
+        const radius=u.role==='siege'?13:u.role==='melee'?9:7;
+        if(!custom){g.fillStyle(0x10251d,.65);g.fillEllipse(u.x+3,u.y+8,radius*2.5,11);g.fillStyle(color);g.fillCircle(u.x,u.y,radius);g.lineStyle(2,0xd9d6ae,.65);g.lineBetween(u.x,u.y,u.x+(u.team==='blue'?1:-1)*(radius+5),u.y);}
+        g.fillStyle(0x142a22);g.fillRect(u.x-14,u.y-20,28,4);g.fillStyle(color);g.fillRect(u.x-14,u.y-20,28*Math.max(0,u.hp/u.maxHp),4);
+      }
+      if(this.combat.command.kind==='attack'&&this.combat.command.targetId===u.id&&u.alive){g.lineStyle(2,0xffdf9c);g.strokeCircle(u.x,u.y,u.kind==='building'?44:21);}
+    }
+    const liveIds=new Set([...match.units.map(u=>u.id),...match.actors.map(c=>c.profile.id)]);
+    for(const id of this.lastPositions.keys())if(!liveIds.has(id))this.lastPositions.delete(id);
+  }
+
   private renderFog(){
     const g=this.fog;g.clear();const match=this.match;if(!match)return;
     const cell=LANE.vision.cell;
