@@ -33,6 +33,7 @@ export type BattlefieldUnit=Target & {
   kind:'minion'|'building';
   role:BattlefieldMinionRole|BattlefieldStructureRole;
 };
+type BattlefieldVictim={point:Point;unit?:BattlefieldUnit;actor?:Combat;life?:number};
 
 export const BATTLEFIELD={
   firstWave:10,
@@ -56,6 +57,7 @@ export const BATTLEFIELD={
     ranged:{hp:220,armor:0,range:145,attack:27,interval:1.5,speed:70},
     siege:{hp:650,armor:15,range:175,attack:55,interval:2,speed:60},
   },
+  buildingRewards:{outer:150,inner:200,inhibitor:100,nexus:0},
 } as const;
 
 export const BATTLEFIELD_ROLE_BY_CHAMPION={
@@ -67,6 +69,10 @@ export const BATTLEFIELD_ROLE_BY_CHAMPION={
 
 const LANES:readonly LaneId[]=['top','mid','bottom'];
 const STRUCTURE_ORDER:readonly Exclude<BattlefieldStructureRole,'nexus'>[]=['outer','inner','inhibitor'];
+
+export function battlefieldFountain(team:BattlefieldTeam):Point{
+  return BATTLEFIELD_NAVIGATION.node(team==='blue'?'blue-base':'red-base').point;
+}
 
 export function battlefieldChampionSpawn(championId:keyof typeof BATTLEFIELD_ROLE_BY_CHAMPION,team:BattlefieldTeam):Point{
   const role=BATTLEFIELD_ROLE_BY_CHAMPION[championId];
