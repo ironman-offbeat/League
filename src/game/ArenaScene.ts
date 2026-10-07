@@ -361,7 +361,30 @@ export class ArenaScene extends Phaser.Scene {
   private drawMap() {
     this.mapLayer?.destroy(true);this.mapLayer=this.add.container(0,0).setDepth(0);
     const g=this.add.graphics();this.mapLayer.add(g);const w=RULES.world.width,h=RULES.world.height;
-    if(this.match){
+    if(this.battlefieldMatch){
+      const match=this.battlefieldMatch;
+      g.fillStyle(0x263d32);g.fillRect(0,0,w,h);
+      g.fillStyle(0x1b3428,.55);g.fillEllipse(430,500,520,520);g.fillEllipse(1170,500,520,520);
+      g.lineStyle(92,0x355366,.28);g.lineBetween(610,250,990,750);
+      const laneNames={top:'TOP',mid:'MID',bottom:'BOTTOM'} as const;
+      for(const lane of ['top','mid','bottom'] as const){
+        const route=match.laneRoute(lane);
+        g.lineStyle(144,0x555c49,.82);g.beginPath();g.moveTo(route[0].x,route[0].y);for(const point of route.slice(1))g.lineTo(point.x,point.y);g.strokePath();
+        g.lineStyle(108,0x74745b,.28);g.beginPath();g.moveTo(route[0].x,route[0].y);for(const point of route.slice(1))g.lineTo(point.x,point.y);g.strokePath();
+        g.lineStyle(2,0xc1b878,.22);g.beginPath();g.moveTo(route[0].x,route[0].y);for(const point of route.slice(1))g.lineTo(point.x,point.y);g.strokePath();
+        const mid=match.lanePoint('blue',lane,match.laneLength(lane)/2);
+        this.mapLayer.add(this.add.text(mid.x,mid.y-48,laneNames[lane],{fontFamily:'Georgia,serif',fontSize:'16px',color:'#d6cf9b',stroke:'#1b2c23',strokeThickness:3}).setOrigin(.5).setAlpha(.72));
+      }
+      for(const team of ['blue','red'] as const){
+        const nexus=match.structure(team,'nexus'),color=team==='blue'?0x345e60:0x664c48;
+        g.fillStyle(color,.9);g.fillCircle(nexus.x,nexus.y,82);g.lineStyle(3,team==='blue'?0x83ced2:0xe3a08f,.55);g.strokeCircle(nexus.x,nexus.y,70);
+      }
+      for(const point of [{x:390,y:500},{x:470,y:760},{x:1130,y:240},{x:1210,y:500}]){
+        g.fillStyle(0x173c29,.88);g.fillCircle(point.x,point.y,58);g.lineStyle(2,0x436d48,.5);g.strokeCircle(point.x,point.y,52);
+      }
+      return;
+    }
+    if(this.laneMatch){
       g.fillStyle(0x263d32);g.fillRect(0,0,w,h);
       g.fillStyle(0x62604a);g.fillRoundedRect(60,LANE.y-110,w-120,220,65);
       g.lineStyle(2,0xa49b6b,.25);g.lineBetween(100,LANE.y,1500,LANE.y);
