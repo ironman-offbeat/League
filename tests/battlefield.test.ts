@@ -168,7 +168,7 @@ test('configured building values match the current full-map design targets',()=>
 });
 
 
-test('battlefield champions use role starts while recall and respawn remain bound to team fountains',()=>{
+test('battlefield champions begin at fountains while role staging stays data driven',()=>{
   const match=new BattlefieldMatch();
   assert.equal(match.members.length,4);
   assert.equal(match.opponents.length,4);
@@ -179,17 +179,20 @@ test('battlefield champions use role starts while recall and respawn remain boun
   for(const actor of match.actors){
     const team=match.teamOf(actor);
     const original=actor.visualId as keyof typeof BATTLEFIELD_ROLE_BY_CHAMPION;
-    const start=battlefieldChampionSpawn(original,team);
+    const roleStart=battlefieldChampionSpawn(original,team);
     const fountain=battlefieldFountain(team);
-    assert.deepEqual({x:actor.hero.x,y:actor.hero.y},start);
+    assert.deepEqual({x:actor.hero.x,y:actor.hero.y},fountain);
     assert.deepEqual(actor.profile.spawn,fountain);
-    assert.deepEqual(actor.anchor,start);
+    assert.deepEqual(actor.anchor,fountain);
+    assert.notDeepEqual(roleStart,fountain);
     assert.equal(actor.progression.enabled,true);
     assert.equal(actor.equipment.weapon,1);
     assert.equal(actor.equipment.armor,1);
+    assert.equal(match.shopReason(actor,'armor'),'팀 골드 부족');
   }
 
   const renekton=match.members[0];
+  renekton.hero.x+=80;renekton.anchor={x:renekton.hero.x,y:renekton.hero.y};
   assert.ok(renekton.recall());
   step(match,4.1);
   assert.deepEqual({x:renekton.hero.x,y:renekton.hero.y},battlefieldFountain('blue'));
