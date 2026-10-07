@@ -1,17 +1,30 @@
 import { test, expect } from '@playwright/test';
-test('enemy champions advance, fight, pause and reset with separate identities',async({page,isMobile},info)=>{
+test('three-lane battlefield renders full structures, role starts, overview camera and clean reset',async({page,isMobile},info)=>{
  test.setTimeout(90000);
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
  await page.goto('/');await expect(page.locator('body')).toHaveAttribute('data-ready','true');
  const press=async(id:string)=>{if(isMobile)await page.locator(id).tap();else await page.locator(id).click();};
  await press('#mode');await expect(page.locator('.version')).toHaveText('07');
- const initial=await page.evaluate(()=>(window as any).leagueDebug.match.opponents);
- expect(initial).toHaveLength(4);expect(new Set(initial.map((c:any)=>c.id)).size).toBe(4);
- expect(initial.every((c:any)=>c.id.startsWith('red-')&&c.level===1&&c.equipment.weapon===1)).toBe(true);
- await press('#rally');await press('#front-camera');
- await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.match.opponents.every((c:any)=>c.hero.x<1300)),{timeout:45000}).toBe(true);
- await expect.poll(()=>page.evaluate(()=>{const d=(window as any).leagueDebug;return d.match.opponents.some((c:any)=>c.hero.hp<c.hero.maxHp)&&d.members.some((c:any)=>c.damage>0);}),{timeout:40000}).toBe(true);
- await page.screenshot({path:`test-results/ai-${info.project.name}.png`});
+ expect(await page.evaluate(()=>(window as any).leagueDebug.mode)).toBe('battlefield');
+ const initial=await page.evaluate(()=>(window as any).leagueDebug.match);
+ expect(initial.opponents).toHaveLength(4);expect(new Set(initial.opponents.map((c:any)=>c.id)).size).toBe(4);
+ expect(initial.opponents.every((c:any)=>c.id.startsWith('red-')&&c.level===1&&c.equipment.weapon===1)).toBe(true);
+ expect(initial.units.filter((u:any)=>u.kind==='building')).toHaveLength(20);
+ expect(new Set(initial.opponents.map((c:any)=>`${Math.round(c.hero.x)}:${Math.round(c.hero.y)}`)).size).toBe(4);
+ await press('#front-camera');
+ expect(await page.evaluate(()=>(window as any).leagueDebug.camera.zoom)).toBeLessThan(1);
+ await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.match.wave),{timeout:35000}).toBe(1);
+ const lanes=await page.evaluate(()=>{
+   const units=(window as any).leagueDebug.match.units.filter((u:any)=>u.kind==='minion');
+   return {
+     total:units.length,
+     top:units.filter((u:any)=>u.lane==='top').length,
+     mid:units.filter((u:any)=>u.lane==='mid').length,
+     bottom:units.filter((u:any)=>u.lane==='bottom').length,
+   };
+ });
+ expect(lanes.total).toBeGreaterThanOrEqual(30);expect(lanes.top).toBeGreaterThanOrEqual(10);expect(lanes.mid).toBeGreaterThanOrEqual(10);expect(lanes.bottom).toBeGreaterThanOrEqual(10);
+ await page.screenshot({path:`test-results/battlefield-${info.project.name}.png`});
  await press('#pause');
  const before=await page.evaluate(()=>JSON.stringify((window as any).leagueDebug.match));
  await page.waitForTimeout(500);expect(await page.evaluate(()=>JSON.stringify((window as any).leagueDebug.match))).toBe(before);
@@ -28,6 +41,8 @@ test('lane shop spends shared gold, upgrades only the selected hero and resets c
  await press('#mode');await expect(page.locator('#gear-summary')).toHaveText('무기 T1 · 방어 T1');
  await expect(page.locator('#rank-summary')).toHaveText('Q 1 · W 잠김 · E 잠김 · R 잠김');
  await expect(page.locator('#dash')).toBeDisabled();await expect(page.locator('#potion-use')).toBeDisabled();
+ await press('#recall');
+ await expect.poll(()=>page.evaluate(()=>{const h=(window as any).leagueDebug.hero;return Math.hypot(h.x-140,h.y-840);}),{timeout:15000}).toBeLessThan(2);
  await press('#shop-toggle');await expect(page.locator('#shop-panel')).toBeVisible();
  await expect(page.locator('#buy-armor')).toBeDisabled();await expect(page.locator('#buy-health')).toBeDisabled();
  await page.screenshot({path:`test-results/shop-${info.project.name}.png`});
@@ -40,7 +55,7 @@ test('lane shop spends shared gold, upgrades only the selected hero and resets c
  await page.locator('#shop-champion').selectOption('1');await expect(page.locator('#gear-summary')).toHaveText('무기 T1 · 방어 T1');
  await expect(page.locator('#buy-armor')).toBeDisabled();await expect(page.locator('#shop-stats')).toContainText('주문력 15');
  await press('#shop-close');await expect(page.locator('#shop-panel')).toBeHidden();
- await press('#rally');await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.hero.x)).toBeGreaterThan(230);
+ await press('#rally');await expect.poll(()=>page.evaluate(()=>{const h=(window as any).leagueDebug.hero;return Math.hypot(h.x-140,h.y-840);})).toBeGreaterThan(120);
  await press('#shop-toggle');await expect(page.locator('#buy-armor')).toContainText('우물에서만 구매 가능');
  await press('#shop-close');await press('#reset');await expect(page.locator('#gear-summary')).toHaveText('무기 T1 · 방어 T1');
  await expect(page.locator('#team-gold')).toHaveText('팀 골드 200');await press('#mode');await expect(page.locator('#inventory')).toBeHidden();
@@ -165,7 +180,7 @@ test('lane mode starts waves, rallies four heroes, pauses clocks and resets clea
  await expect(page.locator('#xp-track')).toBeVisible();await expect(page.locator('#xp-text')).toHaveText('XP 0 / 100');
  await expect(page.locator('#team-gold')).toHaveText('팀 골드 200');await expect(page.locator('#ultimate')).toBeDisabled();await expect(page.locator('#ult-cd')).toHaveText('Lv. 4 해금');
  await expect(page.locator('#dash')).not.toHaveClass(/armed/);
- expect(await page.evaluate(()=>(window as any).leagueDebug.mode)).toBe('lane');
+ expect(await page.evaluate(()=>(window as any).leagueDebug.mode)).toBe('battlefield');
  await press('#rally');
  await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.members.filter((m:any)=>m.command==='move').length)).toBe(4);
  await press('#pause');const frozen=await page.evaluate(()=>(window as any).leagueDebug.match.elapsed);await page.waitForTimeout(300);
@@ -178,9 +193,9 @@ test('lane mode starts waves, rallies four heroes, pauses clocks and resets clea
  await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.match.wave),{timeout:35000}).toBe(1);
  await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.match.gold)).toBeGreaterThan(200);
  await press('#front-camera');
- expect(await page.evaluate(()=>(window as any).leagueDebug.match.units.filter((u:any)=>u.kind==='minion').length)).toBeGreaterThan(0);
+ expect(await page.evaluate(()=>(window as any).leagueDebug.match.units.filter((u:any)=>u.kind==='minion').length)).toBeGreaterThanOrEqual(30);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
- await page.screenshot({path:`test-results/lane-${info.project.name}.png`});
+ await page.screenshot({path:`test-results/three-lane-${info.project.name}.png`});
  await press('#reset');await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.match.wave)).toBe(0);
  await expect(page.locator('#team-gold')).toHaveText('팀 골드 200');await expect(page.locator('#xp-text')).toHaveText('XP 0 / 100');
  await press('#mode');await expect(page.locator('#retaliation')).toBeVisible();await expect(page.locator('#match-hud')).toBeHidden();

@@ -27,17 +27,26 @@ scene.notify=text=>{if(lastToast!==text){el('toast').textContent=text;lastToast=
 scene.onFrame=s=>{
   const c=s.combat,match=s.match;
   updateShop();
-  el('mode').textContent=match?'연습장으로':'한 라인 경기';
-  el('session-name').textContent=match?'한 라인 공성':'조작 연습장';
+  el('mode').textContent=match?'연습장으로':'3라인 경기';
+  el('session-name').textContent=s.battlefield?'3라인 전장':match?'한 라인 공성':'조작 연습장';
   el('retaliation').hidden=!!match;el('training-objectives').hidden=!!match;el('match-hud').hidden=!match;
   el('result-overlay').hidden=!match?.result;
   if(match){
     const time=`${Math.floor(match.elapsed/60).toString().padStart(2,'0')}:${Math.floor(match.elapsed%60).toString().padStart(2,'0')}`;
     el('match-clock').textContent=time;
     el('team-gold').textContent=`팀 골드 ${Math.floor(match.economy.blue.gold+1e-8)}`;
-    const tower=match.structure('red','tower'),blue=match.structure('blue','nexus'),red=match.structure('red','nexus');
-    el('match-objective').textContent=tower.alive?`적 타워 ${Math.ceil(tower.hp)} · 미니언과 함께 공성`:`적 넥서스 ${Math.ceil(red.hp)} · 파괴하면 승리`;
-    el('match-wave').textContent=`처치 ${match.kills.blue} : ${match.kills.red} · 아군 넥서스 ${Math.ceil(blue.hp)} · ${match.wave}차 출발 · 증원 ${Math.max(0,Math.ceil(match.nextWave-match.elapsed))}초`;
+    if(s.battlefield){
+      const blue=s.battlefield.structure('blue','nexus'),red=s.battlefield.structure('red','nexus');
+      const lanes=['top','mid','bottom'] as const;
+      const outerAlive=lanes.filter(lane=>s.battlefield!.structure('red','outer',lane).alive).length;
+      const inhibitorsAlive=lanes.filter(lane=>s.battlefield!.structure('red','inhibitor',lane).alive).length;
+      el('match-objective').textContent=`적 외곽 타워 ${outerAlive}/3 · 억제기 ${inhibitorsAlive}/3 · 넥서스 ${Math.ceil(red.hp)}`;
+      el('match-wave').textContent=`처치 ${match.kills.blue} : ${match.kills.red} · 아군 넥서스 ${Math.ceil(blue.hp)} · ${match.wave}차 3라인 웨이브 · 증원 ${Math.max(0,Math.ceil(match.nextWave-match.elapsed))}초`;
+    }else if(s.laneMatch){
+      const tower=s.laneMatch.structure('red','tower'),blue=s.laneMatch.structure('blue','nexus'),red=s.laneMatch.structure('red','nexus');
+      el('match-objective').textContent=tower.alive?`적 타워 ${Math.ceil(tower.hp)} · 미니언과 함께 공성`:`적 넥서스 ${Math.ceil(red.hp)} · 파괴하면 승리`;
+      el('match-wave').textContent=`처치 ${match.kills.blue} : ${match.kills.red} · 아군 넥서스 ${Math.ceil(blue.hp)} · ${match.wave}차 출발 · 증원 ${Math.max(0,Math.ceil(match.nextWave-match.elapsed))}초`;
+    }
     if(match.result){el('result-title').textContent={victory:'승리!',defeat:'패배',draw:'무승부'}[match.result];el('result-summary').textContent=`${time} · ${match.wave}차 미니언 · 획득 골드 ${Math.floor(match.economy.blue.earned)} · 총 피해 ${Math.round(match.members.reduce((sum,m)=>sum+m.damage,0)).toLocaleString('ko-KR')} · ${match.result==='victory'?'적 넥서스를 파괴했습니다.':match.result==='defeat'?'아군 넥서스가 파괴되었습니다.':'두 넥서스가 동시에 파괴되었습니다.'}`;}
   }
   const fury=c.profile.kit==='fury';
@@ -89,7 +98,7 @@ el('mode').onclick=()=>switchMode(!scene.match);
 el('rematch').onclick=()=>switchMode(true);
 el('back-training').onclick=()=>switchMode(false);
 el('rally').onclick=()=>scene.rally();
-el('front-camera').onclick=()=>{if(scene.match){const front=Math.max(600,...scene.match.units.filter(u=>u.team==='blue'&&u.kind==='minion'&&u.alive).map(u=>u.x));scene.cameras.main.centerOn(front,500);}};
+el('front-camera').onclick=()=>scene.showFront();
 el('center').onclick=el('portrait').onclick=()=>scene.centerHero();
 el('retaliation').onclick=()=>{if(!scene.blocked)scene.squad.setRetaliation(!scene.squad.retaliation);};
 el('recall').onclick=()=>{if(!scene.blocked&&scene.combat.recall())scene.notify('귀환 중 · 이동이나 스킬을 사용하면 취소됩니다.');};
@@ -118,4 +127,4 @@ document.addEventListener('contextmenu',e=>e.preventDefault());
 window.addEventListener('keydown',e=>{if(e.repeat)return;if(e.code==='Space'){e.preventDefault();manualPause=!manualPause;syncPause();}if(e.code==='Escape'){skillDrag=null;scene.cancelGesture();}});
 
 // Read-only diagnostics for repeatable browser verification, no mutation shortcuts.
-Object.defineProperty(window,'leagueDebug',{get:()=>({visuals:scene.visualCounts,mode:scene.match?'lane':'training',match:scene.match?{kills:{...scene.match.kills},opponents:scene.match.opponents.map(c=>({id:c.profile.id,visualId:c.visualId,hero:{...c.hero},level:c.progression.level,xp:c.progression.xp,command:c.command.kind,life:c.life,equipment:{weapon:c.equipment.weapon,armor:c.equipment.armor},state:scene.match!.ai.find(a=>a.actor===c)?.state})),redGold:scene.match.economy.red.gold,elapsed:scene.match.elapsed,wave:scene.match.wave,result:scene.match.result,gold:scene.match.economy.blue.gold,earnedGold:scene.match.economy.blue.earned,units:scene.match.units.map(u=>({...u}))}:null,selected:scene.combat.profile.id,retaliation:scene.squad.retaliation,skillCooldowns:{...scene.combat.cooldown},respawn:scene.combat.respawnRemaining,stacks:scene.combat.abilities.stacks,pet:scene.combat.abilities.pet?{...scene.combat.abilities.pet}:null,members:scene.squad.members.map(c=>({id:c.profile.id,level:c.progression.level,xp:c.progression.xp,anchor:{...c.anchor},hero:{...c.hero},command:c.command.kind,damage:c.damage,elapsed:c.elapsed})),ready:document.body.dataset.ready==='true',paused:scene.paused,hero:{...scene.combat.hero},anchor:{...scene.combat.anchor},equipment:{weapon:scene.combat.equipment.weapon,armor:scene.combat.equipment.armor,potion:scene.combat.equipment.potion,active:scene.combat.equipment.active?{...scene.combat.equipment.active}:null},ranks:{...scene.combat.ranks},level:scene.combat.progression.level,xp:scene.combat.progression.xp,command:scene.combat.command.kind,damage:scene.combat.damage,dashCooldown:scene.combat.cooldown.dash,elapsed:scene.combat.elapsed,enemies:scene.combat.enemies.map(e=>({...e})),camera:{x:scene.cameras.main?.scrollX??0,y:scene.cameras.main?.scrollY??0},completed:{...scene.combat.completed}})});
+Object.defineProperty(window,'leagueDebug',{get:()=>({visuals:scene.visualCounts,mode:scene.battlefield?'battlefield':scene.laneMatch?'lane':'training',match:scene.match?{kills:{...scene.match.kills},opponents:scene.match.opponents.map(c=>({id:c.profile.id,visualId:c.visualId,hero:{...c.hero},level:c.progression.level,xp:c.progression.xp,command:c.command.kind,life:c.life,equipment:{weapon:c.equipment.weapon,armor:c.equipment.armor},state:scene.laneMatch?.ai.find(a=>a.actor===c)?.state})),redGold:scene.match.economy.red.gold,elapsed:scene.match.elapsed,wave:scene.match.wave,result:scene.match.result,gold:scene.match.economy.blue.gold,earnedGold:scene.match.economy.blue.earned,units:scene.match.units.map(u=>({...u}))}:null,selected:scene.combat.profile.id,retaliation:scene.squad.retaliation,skillCooldowns:{...scene.combat.cooldown},respawn:scene.combat.respawnRemaining,stacks:scene.combat.abilities.stacks,pet:scene.combat.abilities.pet?{...scene.combat.abilities.pet}:null,members:scene.squad.members.map(c=>({id:c.profile.id,level:c.progression.level,xp:c.progression.xp,anchor:{...c.anchor},hero:{...c.hero},command:c.command.kind,damage:c.damage,elapsed:c.elapsed})),ready:document.body.dataset.ready==='true',paused:scene.paused,hero:{...scene.combat.hero},anchor:{...scene.combat.anchor},equipment:{weapon:scene.combat.equipment.weapon,armor:scene.combat.equipment.armor,potion:scene.combat.equipment.potion,active:scene.combat.equipment.active?{...scene.combat.equipment.active}:null},ranks:{...scene.combat.ranks},level:scene.combat.progression.level,xp:scene.combat.progression.xp,command:scene.combat.command.kind,damage:scene.combat.damage,dashCooldown:scene.combat.cooldown.dash,elapsed:scene.combat.elapsed,enemies:scene.combat.enemies.map(e=>({...e})),camera:{x:scene.cameras.main?.scrollX??0,y:scene.cameras.main?.scrollY??0,zoom:scene.cameras.main?.zoom??1},completed:{...scene.combat.completed}})});
