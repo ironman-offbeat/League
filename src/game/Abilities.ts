@@ -45,7 +45,11 @@ export class Abilities {
     if(kit==='fury')return slot==='manual'?c.castDash(point!):c.castUltimate();
     c.hero.mana-=p.cost;c.cooldown[slot==='manual'?'dash':'ultimate']=p.cooldown;c.cancelRecall();c.pending=null;
     if(slot==='manual')c.completed.dash=true;
-    const targets=c.enemies.filter(e=>e.alive&&skillTarget(e)&&c.canSee(e));
+    const offensive=kit==='flame'||(kit==='frost'&&slot==='ultimate')||kit==='curse';
+    if(offensive)c.offensiveAction();
+    // Visibility decides whether a skill can be selected/cast. Once an untargeted
+    // area or projectile exists, collision uses physical geometry, including hidden units.
+    const targets=c.enemies.filter(e=>e.alive&&skillTarget(e));
     if(kit==='flame') {
       const cfg=this.config.flame;
       const center=slot==='ultimate'?towards(c.hero,point!,cfg.ultimate.range):c.hero;
@@ -64,7 +68,7 @@ export class Abilities {
     }
     return true;
   }
-  private launch(kind:'hook'|'arrow',point:Point,range:number){const c=this.owner,d=distance(c.hero,point);this.missiles.push({point:{x:c.hero.x,y:c.hero.y},direction:{x:(point.x-c.hero.x)/d,y:(point.y-c.hero.y)/d},remaining:range,kind,damage:kind==='hook'?this.config.curse.hook.damage:this.config.frost.ultimate.damage,stun:kind==='hook'?this.config.curse.hook.stun:this.config.frost.ultimate.stun});}
+  private launch(kind:'hook'|'arrow',point:Point,range:number){const c=this.owner,d=distance(c.hero,point);c.offensiveAction();this.missiles.push({point:{x:c.hero.x,y:c.hero.y},direction:{x:(point.x-c.hero.x)/d,y:(point.y-c.hero.y)/d},remaining:range,kind,damage:kind==='hook'?this.config.curse.hook.damage:this.config.frost.ultimate.damage,stun:kind==='hook'?this.config.curse.hook.stun:this.config.frost.ultimate.stun});}
   onBasicHit(e:Dummy){
     if(!skillTarget(e))return;
     if(this.owner.profile.kit==='frost')applySlow(e,this.config.frost.passive.slow,this.config.frost.passive.duration);
@@ -121,7 +125,7 @@ export class Abilities {
       const length=Math.min(m.remaining,cfg.speed*dt),end={x:m.point.x+m.direction.x*length,y:m.point.y+m.direction.y*length};
       const hit=c.enemies.filter(e=>e.alive&&skillTarget(e)&&(m.kind==='hook'||e.kind!=='minion')).map(e=>({e,...alongSegment(m.point,end,e)})).filter(h=>h.distance<=cfg.radius+18).sort((a,b)=>a.t-b.t)[0]?.e;
       m.remaining-=length;m.point=end;
-      if(hit){c.hurt(hit,m.damage,m.kind==='hook'?'Q':'R',true,'magic');applyCC(hit,'stunned',m.stun);
+      if(hit){c.hurt(hit,m.damage,m.kind==='hook'?'Q':'R',true,'magic','skill',false);applyCC(hit,'stunned',m.stun);
         if(m.kind==='hook'&&c.canAct&&c.hero.rooted<=0){c.attack(hit.id);this.pull=towards(hit,c.hero,c.profile.stats.range);}
         return false;
       }
@@ -137,6 +141,6 @@ export class Abilities {
     const goal=distance(p,c.hero)>cfg.leash?c.hero:target??c.hero;
     const reach=goal===c.hero?45:cfg.range,d=distance(p,goal);
     if(d>reach){const next=towards(p,goal,Math.min(cfg.speed*dt,d-reach));p.x=next.x;p.y=next.y;}
-    else if(goal===target&&target&&p.cooldown<=0){c.hurt(target,p.damage,'곰',true,'magic');p.cooldown=cfg.interval;}
+    else if(goal===target&&target&&p.cooldown<=0){c.summonOffensiveAction();c.hurt(target,p.damage,'곰',true,'magic','skill',false);p.cooldown=cfg.interval;}
   }
 }
