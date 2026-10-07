@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { LaneMatch, LANE } from '../src/game/LaneMatch.ts';
 import { RULES } from '../src/game/config.ts';
-import { LANE_IDS, laneRoute, routeProgress } from '../src/game/mapLayout.ts';
+import { LANE_IDS, laneRoute, mirrorPoint, routeProgress } from '../src/game/mapLayout.ts';
 import { damageTarget } from '../src/game/targets.ts';
 import { Combat } from '../src/game/combat.ts';
 import { CHAMPIONS } from '../src/game/champions.ts';
@@ -103,4 +103,11 @@ test('destroying one lane tower opens the nexus while other lane towers remain i
  const m=new LaneMatch({ai:false}),mid=m.structure('red','tower','mid'),top=m.structure('red','tower','top'),nexus=m.structure('red','nexus');
  assert.equal(nexus.protected,true);kill(mid);m.step(RULES.step);
  assert.equal(top.alive,true);assert.equal(nexus.protected,false);
+});
+
+
+test('three-lane layout is exactly rotationally symmetric between teams',()=>{
+ assert.deepEqual(laneRoute('top','blue').map(mirrorPoint),laneRoute('bot','red'));
+ assert.deepEqual(laneRoute('bot','blue').map(mirrorPoint),laneRoute('top','red'));
+ assert.deepEqual(laneRoute('mid','blue').map(mirrorPoint),laneRoute('mid','red'));
 });
