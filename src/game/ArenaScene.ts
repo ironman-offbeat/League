@@ -79,7 +79,6 @@ export class ArenaScene extends Phaser.Scene {
   cancelGesture() { this.gesture=null; this.aimSlot=null; this.aim=null; }
   centerHero() {
     if(this.match)this.cameras.main.setZoom(Math.max(.58,Math.min(.82,this.cameras.main.zoom||.72)));
-    else this.cameras.main.setZoom(1);
     this.cameras.main.centerOn(this.combat.hero.x+70,this.combat.hero.y-20);
   }
   fitBattlefield() {
@@ -95,7 +94,8 @@ export class ArenaScene extends Phaser.Scene {
     this.labels.forEach(label=>label.destroy());
     this.labels=this.combat.enemies.map(()=>this.add.text(0,0,'',{fontFamily:'Malgun Gothic, sans-serif',fontSize:'11px',color:'#e4ddbd',backgroundColor:'#18241dc0',padding:{x:5,y:3}}).setOrigin(.5).setDepth(7));
     this.drawMap();
-    if(lane)this.fitBattlefield();else this.centerHero();
+    if(lane)this.fitBattlefield();
+    else {this.cameras.main.setZoom(1);this.centerHero();}
     this.notify(lane?'3라인 전장 · Top / Mid / Bottom을 나눠 지휘하세요.':'연습장을 초기화했습니다.');
   }
   restartTraining(){this.startMode(!!this.match);}
