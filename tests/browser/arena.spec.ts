@@ -13,8 +13,10 @@ test('battlefield mode exposes three lanes, role starts, pause and clean reset',
  const structures=snapshot.units.filter((u:any)=>u.kind==='building');
  expect(structures).toHaveLength(20);
  expect(new Set(structures.filter((u:any)=>u.lane).map((u:any)=>u.lane))).toEqual(new Set(['top','mid','bottom']));
+ expect(await page.evaluate(()=>(window as any).leagueDebug.camera.zoom)).toBeLessThan(1);
+ await page.screenshot({path:`test-results/battlefield-overview-${info.project.name}.png`});
  await press('#rally');await expect.poll(()=>page.evaluate(()=>(window as any).leagueDebug.members.filter((m:any)=>m.command==='move').length)).toBe(4);
- await press('#front-camera');await page.screenshot({path:`test-results/battlefield-${info.project.name}.png`});
+ await press('#front-camera');expect(await page.evaluate(()=>(window as any).leagueDebug.camera.zoom)).toBe(1);
  await press('#pause');
  const before=await page.evaluate(()=>JSON.stringify((window as any).leagueDebug.match));
  await page.waitForTimeout(500);expect(await page.evaluate(()=>JSON.stringify((window as any).leagueDebug.match))).toBe(before);
