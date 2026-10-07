@@ -259,7 +259,7 @@ export class Combat {
       const current = this.enemies.find(e => e.id === order.targetId && !e.protected);
       if (!current || current.generation!==order.generation || !current.alive) {
         this.pending = null;
-        const memory=this.memoryResolver?this.memoryFor(order.targetId,order.generation):this.lastSeen;
+        const memory=this.memoryResolver?this.memoryFor(order.targetId,order.generation):null;
         if(memory){
           this.lastSeen={...memory};
           this.travel(this.lastSeen,this.stats.speed*dt);
