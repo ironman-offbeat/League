@@ -101,3 +101,13 @@ test('default opposing teams can fight, grow, retreat and keep entity counts bou
  assert.ok(m.actors.every(c=>Number.isFinite(c.hero.hp)&&c.hero.hp>=0&&c.hero.hp<=c.hero.maxHp));assert.ok(m.economy.red.gold>=0);assert.ok(m.economy.blue.gold>=0);
  m.result='victory';const snapshot=JSON.stringify({time:m.elapsed,ai:m.ai.map(b=>b.state),heroes:m.actors.map(c=>[c.hero,c.elapsed]),gold:m.economy});step(m,10);assert.equal(JSON.stringify({time:m.elapsed,ai:m.ai.map(b=>b.state),heroes:m.actors.map(c=>[c.hero,c.elapsed]),gold:m.economy}),snapshot);
 });
+
+
+test('AI preserves an existing last-seen chase instead of replacing it with advance logic',()=>{
+ const m=new LaneMatch({ai:false}),c=m.opponents[0],enemy=m.members[0],brain=new LaneAI(m,c,0);m.elapsed=20;
+ c.hero.x=930;c.hero.y=430;enemy.hero.x=900;enemy.hero.y=430;m.refreshVision();
+ const t=c.enemies.find(t=>t.id===enemy.profile.id)!;assert.ok(c.attack(t.id,{x:700,y:430}));
+ c.hero.x=960;enemy.hero.x=700;m.refreshVision();assert.equal(c.canSee(t),false);
+ const before=c.command;brain.step(.3);
+ assert.equal(brain.state,'fight');assert.equal(c.command.kind,'attack');assert.equal(c.command,before);
+});
