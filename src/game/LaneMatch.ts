@@ -14,6 +14,7 @@ import { championTarget } from './championTarget.ts';
 import { LaneAI } from './LaneAI.ts';
 import { EQUIPMENT } from './equipment.ts';
 import type { Purchase } from './equipment.ts';
+import { PROTOTYPE_MID_ROUTE, advanceOnRoute, pointOnRoute, routeLength, routeProgress } from './navigation.ts';
 
 // Compact first-match map. These are playtest values, not final ranked balance.
 export const LANE = {
@@ -48,6 +49,10 @@ export class LaneMatch extends Squad {
   get actors(){return [...this.members,...this.opponents];}
   teamOf(c:Combat):Team{return this.opponents.includes(c)?'red':'blue';}
   teamMembers(team:Team){return team==='blue'?this.members:this.opponents;}
+  laneProgress(team:Team,point:Point){return routeProgress(PROTOTYPE_MID_ROUTE,team,point);}
+  lanePoint(team:Team,travelled:number,lateral=0){return pointOnRoute(PROTOTYPE_MID_ROUTE,team,travelled,lateral);}
+  laneLength(){return routeLength(PROTOTYPE_MID_ROUTE);}
+  laneAdvance(team:Team,point:Point,advance:number,preserveLateral=true){return advanceOnRoute(PROTOTYPE_MID_ROUTE,team,point,advance,preserveLateral);}
   elapsed=0;
   wave=0;
   nextWave:number=LANE.firstWave;
@@ -240,7 +245,7 @@ export class LaneMatch extends Squad {
       // Automatic siege stops when its escort dies. Explicit attack orders remain risky by choice.
       const team=this.teamOf(c),tower=this.structure(team==='blue'?'red':'blue','tower');
       if(c.alive&&c.command.kind==='idle'&&tower.alive&&!this.supported(tower,team)&&distance(c.hero,tower)<=LANE.tower.range){
-        c.move({x:tower.x+(team==='blue'?-1:1)*(LANE.tower.range+50),y:c.hero.y});
+        c.move(this.laneAdvance(team,tower,-(LANE.tower.range+50),false));
       }
       c.step(dt,false);
     }
@@ -284,8 +289,14 @@ export class LaneMatch extends Squad {
         ??(objective?{unit:objective,point:objective}:undefined);
       if(!target)continue;
       const d=distance(unit,target.point);
-      if(d>stats.range){if(unit.rooted<=0)Object.assign(unit,towards(unit,target.point,Math.min(d-stats.range,stats.speed*(1-unit.slow)*dt)));}
-      else if(unit.attackCooldown<=0){hits.push({target,damage:stats.attack});unit.attackCooldown=stats.interval;}
+      if(d>stats.range&&unit.rooted<=0){
+        const step=stats.speed*(1-unit.slow)*dt;
+        if(target.unit?.kind==='building'){
+          const remaining=this.laneProgress(unit.team,target.point)-this.laneProgress(unit.team,unit)-stats.range;
+          if(remaining>1e-6)Object.assign(unit,this.laneAdvance(unit.team,unit,Math.min(step,remaining)));
+          else Object.assign(unit,towards(unit,target.point,Math.min(d-stats.range,step)));
+        }else Object.assign(unit,towards(unit,target.point,Math.min(d-stats.range,step)));
+      }else if(d<=stats.range&&unit.attackCooldown<=0){hits.push({target,damage:stats.attack});unit.attackCooldown=stats.interval;}
     }
     // Collect attacks before resolving deaths, allowing simultaneous nexus destruction.
     for(const hit of hits)this.hit(hit.target,hit.damage);
