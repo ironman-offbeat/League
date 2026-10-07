@@ -32,7 +32,7 @@ test('tower selects minion before closer champion and its windup can be escaped'
  const hp=minion.hp;minion.x=600;step(m,.5);assert.equal(minion.hp,hp);
 });
 test('unescorted direct siege takes tower damage; automatic siege retreats when escort is gone',()=>{
- const m=new LaneMatch(),c=m.members[0],tower=m.structure('red','tower');c.hero.x=1100;c.hero.y=500;c.anchor={x:1100,y:500};
+ const m=new LaneMatch(),c=m.members[0],tower=m.structure('red','tower');c.hero.x=1100;c.hero.y=500;c.anchor={x:1100,y:500};m.refreshVision();
  assert.ok(c.attack(tower.id));step(m,2);assert.ok(c.hero.hp<c.hero.maxHp);assert.ok(tower.hp<tower.maxHp);
  c.command={kind:'idle'};c.pending=null;m.step(RULES.step);assert.equal(c.command.kind,'move');assert.ok(c.anchor.x<tower.x-LANE.tower.range);
 });
@@ -70,7 +70,10 @@ test('long unattended match keeps waves bounded and minions fight opposing struc
 test('isolated siege fixture finishes through tower then nexus without champion opposition',()=>{
  const m=new LaneMatch({enemyChampions:false});
  for(let tick=0;tick<60*180&&!m.result;tick++){
-  if(tick%120===0){const target=m.structure('red','tower').alive?m.structure('red','tower'):m.structure('red','nexus');for(const c of m.members)if(c.alive)c.attack(target.id);}
+  if(tick%120===0){
+   const target=m.structure('red','tower').alive?m.structure('red','tower'):m.structure('red','nexus');
+   for(const c of m.members)if(c.alive){if(c.canSee(target))c.attack(target.id);else c.attackMove(target);}
+  }
   m.step(RULES.step);
  }
  assert.equal(m.result,'victory');assert.equal(m.structure('red','tower').alive,false);assert.equal(m.structure('red','nexus').alive,false);

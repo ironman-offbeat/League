@@ -21,6 +21,9 @@ export type PendingAttack = { targetId: string; remaining: number; empowered: bo
 
 export class Combat {
   onDeath?:()=>void;
+  visibilityResolver?:(target:Dummy)=>boolean;
+  lastSeenResolver?:(target:Dummy)=>Point|null;
+  onOffensiveAction?:()=>void;
   // Entity IDs distinguish teams; art keys continue to identify the original champion.
   visualId:string;
   profile: Champion;
@@ -54,7 +57,9 @@ export class Combat {
   life=0;
   get alive(){return this.hero.hp>0;}
   get canAct(){return this.alive&&this.hero.stunned<=0&&this.hero.airborne<=0;}
-  canSee(e:Dummy){return e.visible||e.revealed>0;}
+  canSee(e:Dummy){return this.visibilityResolver?this.visibilityResolver(e):e.visible||e.revealed>0;}
+  lastSeenFor(e:Dummy){return this.lastSeenResolver?.(e)??(this.canSee(e)?{x:e.x,y:e.y}:null);}
+  offensiveAction(){this.onOffensiveAction?.();}
   castSkill(slot:SkillSlot,point?:Point){
     const cast=this.abilities.cast(slot,point);
     if(cast)this.events.push({kind:'cast',point:{x:this.hero.x,y:this.hero.y},entityId:this.profile.id,visual:`skill.${this.profile.kit}.${slot}`});
@@ -126,7 +131,7 @@ export class Combat {
     // Capture the ordered location, not the target's future/death position.
     this.anchor = clampPoint(point??target);
     this.command = { kind: 'attack', targetId, generation:target.generation, point:{...this.anchor} };
-    this.lastSeen = { x: target.x, y: target.y };
+    this.lastSeen = this.lastSeenFor(target)??{ x: target.x, y: target.y };
     this.pending = null;
     return true;
   }
@@ -251,6 +256,7 @@ export class Combat {
       if (!target) { this.pending = null; this.command = { kind: 'attackMove', point:{...order.point} }; }
       else if (!this.canSee(target)) {
         this.pending = null;
+        const sighting=this.lastSeenFor(target);if(sighting)this.lastSeen=sighting;
         if (this.lastSeen) this.travel(this.lastSeen, this.stats.speed * dt);
         if (!this.lastSeen || distance(this.hero, this.lastSeen) < 0.1) this.command = { kind:'attackMove',point:{...order.point} };
         return;
@@ -317,6 +323,7 @@ export class Combat {
       .sort((a,b)=>Number(a.kind==='building')-Number(b.kind==='building')||distance(this.hero,a)-distance(this.hero,b))[0];
   }
   private basicHit(target: Dummy, raw: number, source: string) {
+    this.offensiveAction();
     if (!this.profile.projectileSpeed) { this.hurt(target, raw, source, true, 'physical', 'basic');this.abilities.onBasicHit(target); return; }
     this.projectiles.push({ x:this.hero.x, y:this.hero.y, target, generation:target.generation, damage:raw });
   }
@@ -341,7 +348,7 @@ export class Combat {
   }
   hurt(target: Dummy, raw: number, source: string, show = true, type:DamageType='physical', kind:HitKind='skill') {
     if(!target.alive||target.protected||(target.kind==='building'&&kind!=='basic'))return;
-    if(raw>0){target.alert=SKILLS.retaliation.alert;target.aggro=this.profile.id;this.lastCombat=this.elapsed;}
+    if(raw>0){this.offensiveAction();target.alert=SKILLS.retaliation.alert;target.aggro=this.profile.id;this.lastCombat=this.elapsed;}
     const amount=damageTarget(target,raw*(type==='magic'&&target.marked>0?1+SKILLS.curse.passive.amplify:1),type,kind,show);
     if(!amount)return;
     this.damage += amount; this.lastCombat = this.elapsed;

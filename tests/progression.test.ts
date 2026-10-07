@@ -67,6 +67,6 @@ test('new matches reset both personal XP and team wealth; no reward occurs after
 test('levelled attack and defenses affect actual damage, not just displayed stats',()=>{
  const m=new LaneMatch(),c=m.members[0],tower=m.structure('red','tower');c.gainExperience(100);
  const before=c.hero.hp,lost=c.receiveDamage(100);near(lost,100*100/138);near(before-c.hero.hp,lost);
- c.hero.x=tower.x-60;c.hero.y=tower.y;c.cooldown.q=100;c.attack(tower.id);
+ c.hero.x=tower.x-60;c.hero.y=tower.y;c.cooldown.q=100;m.refreshVision();c.attack(tower.id);
  const hp=tower.hp;step(c,.3);near(hp-tower.hp,78*.25*100/140);
 });
