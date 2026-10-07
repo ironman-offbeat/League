@@ -78,8 +78,14 @@ export class ArenaScene extends Phaser.Scene {
   setPaused(value: boolean) { this.paused=value; this.visuals?.setPaused(this.blocked); this.accumulator=0; this.cancelGesture(); this.onFrame(this); }
   cancelGesture() { this.gesture=null; this.aimSlot=null; this.aim=null; }
   centerHero() {
-    if(this.match)this.cameras.main.setZoom(Math.max(.58,Math.min(.82,this.cameras.main.zoom||.72)));
-    this.cameras.main.centerOn(this.combat.hero.x+70,this.combat.hero.y-20);
+    if(this.match){
+      this.cameras.main.setZoom(Math.max(.58,Math.min(.82,this.cameras.main.zoom||.72)));
+      this.cameras.main.centerOn(this.combat.hero.x+70,this.combat.hero.y-20);
+      return;
+    }
+    // Preserve the original training camera exactly; WebKit pointer transforms
+    // depend on this established viewport contract in the gesture regressions.
+    this.cameras.main.centerOn(this.combat.hero.x+100,this.combat.hero.y-25);
   }
   fitBattlefield() {
     const width=Math.max(1,this.scale.width),height=Math.max(1,this.scale.height);
