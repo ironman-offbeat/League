@@ -366,6 +366,7 @@ export class BattlefieldMatch extends Squad {
 
   step(dt:number){
     if(this.result||dt<=0)return;
+    for(const economy of Object.values(this.economy))economy.advance(this.elapsed,this.elapsed+dt);
     const previous=this.elapsed;
     this.elapsed+=dt;
     while(this.nextWave<=this.elapsed+1e-8){
@@ -381,14 +382,17 @@ export class BattlefieldMatch extends Squad {
     }
 
     this.updateProtection();
-    const hits:{target:BattlefieldUnit;damage:number}[]=[];
+    for(const actor of this.actors)actor.step(dt,false);
+    this.updateProtection();
+
+    const hits:{target:BattlefieldVictim;damage:number}[]=[];
     for(const unit of this.units){
       if(!unit.alive)continue;
       if(unit.kind==='building')this.stepTower(unit,hits);
       else this.stepMinion(unit,dt,hits);
     }
 
-    for(const hit of hits)damageTarget(hit.target,hit.damage,'physical','basic');
+    for(const hit of hits)this.hit(hit.target,hit.damage);
     this.updateProtection();
 
     const blue=this.structure('blue','nexus').alive;
@@ -398,9 +402,11 @@ export class BattlefieldMatch extends Squad {
       return;
     }
 
-    for(let index=this.units.length-1;index>=0;index--){
-      const unit=this.units[index];
-      if(unit.kind==='minion'&&!unit.alive)this.units.splice(index,1);
+    for(const array of [this.units,this.enemies,this.redTargets]){
+      for(let index=array.length-1;index>=0;index--){
+        const target=array[index];
+        if(target.kind==='minion'&&!target.alive)array.splice(index,1);
+      }
     }
   }
 }
