@@ -126,9 +126,16 @@ test('summons obey bush concealment and reveal themselves when attacking without
   match.refreshVision();
   assert.equal(match.canSeePet('blue',red),false);
 
+  // The R cast correctly exposes Annie first. Expire only that cast reveal
+  // without advancing pet AI, then verify a pet attack reveals only the pet.
+  match.elapsed+=LANE.vision.attackReveal+.02;
+  match.refreshVision();
+  const redTarget=target(match,red.profile.id);
+  assert.equal(match.canSee('blue',redTarget),false);
+  assert.equal(match.canSeePet('blue',red),false);
+
   red.summonOffensiveAction();
   match.refreshVision();
   assert.equal(match.canSeePet('blue',red),true);
-  const redTarget=target(match,red.profile.id);
   assert.equal(match.canSee('blue',redTarget),false);
 });
