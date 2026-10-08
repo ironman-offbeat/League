@@ -18,7 +18,7 @@ export type JungleCampDefinition={
 export const JUNGLE={
   firstSpawn:15,
   respawn:45,
-  monster:{hp:1400,armor:20,magicResist:20},
+  monster:{hp:1400,armor:20,magicResist:20,attack:72,interval:1.25,range:48,speed:86,leash:260,resetSpeed:130,homeRadius:6},
   camps:[
     {id:'blue-blue',side:'blue',buff:'blue',nodeId:'blue-jungle-top',firstSpawn:15,respawn:45},
     {id:'blue-red',side:'blue',buff:'red',nodeId:'blue-jungle-bottom',firstSpawn:15,respawn:45},
@@ -67,6 +67,19 @@ export class JungleCamp implements Target {
   get side(){return this.definition.side;}
   get buff(){return this.definition.buff;}
 
+  clearAggro(){
+    this.aggro=null;
+    this.alert=0;
+    this.attackCooldown=0;
+  }
+
+  restoreAtHome(){
+    this.x=this.point.x;
+    this.y=this.point.y;
+    this.hp=this.maxHp;
+    Object.assign(this,freshStatus(),{revealed:0,alert:0,aggro:null,attackCooldown:0});
+  }
+
   step(time:number,dt=0){
     if(!Number.isFinite(time)||time<0||!Number.isFinite(dt)||dt<0)throw new Error('jungle time must be finite and nonnegative');
     this.time=time;
@@ -84,6 +97,7 @@ export class JungleCamp implements Target {
     }
     this.alive=true;
     this.hp=this.maxHp;
+    this.x=this.point.x;this.y=this.point.y;
     Object.assign(this,freshStatus(),{revealed:0,alert:0,aggro:null,attackCooldown:0,respawn:0});
     if(this.lastDefeatedAt!==null)this.generation++;
     this.nextSpawnAt=null;
