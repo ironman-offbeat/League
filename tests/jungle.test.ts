@@ -131,6 +131,10 @@ test('neutral jungle monsters obey battlefield team vision instead of global vis
   for(const actor of match.opponents){
     actor.hero.x=1450;actor.hero.y=100;actor.anchor={x:1450,y:100};
   }
+  for(const unit of match.units){
+    if(unit.kind==='minion'||unit.role==='outer'||unit.role==='inner')unit.alive=false;
+  }
+  match.vision.reset();
   match.refreshVision();
   assert.equal(match.canSee('blue',blueCamp),false);
   assert.equal(match.canSee('red',blueCamp),false);
