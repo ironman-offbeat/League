@@ -82,3 +82,31 @@ test('jungle role patrols navigation graph instead of joining a lane wave by def
   assert.deepEqual(actor.command.point,target);
   assert.ok(distance(actor.command.point,start)>100);
 });
+
+
+test('battlefield AI target selection uses shared team vision instead of private proximity alone',()=>{
+  const match=new BattlefieldMatch({ai:true});
+  match.elapsed=20;
+  const brain=match.ai[0],red=brain.actor,blue=match.members[0],spotter=match.opponents[1];
+  for(const lane of ['top','mid','bottom'] as const){
+    match.structure('blue','outer',lane).alive=false;
+    match.structure('blue','inner',lane).alive=false;
+  }
+
+  red.hero.x=500;red.hero.y=500;red.anchor={x:500,y:500};
+  blue.hero.x=845;blue.hero.y=500;blue.anchor={x:845,y:500};
+  spotter.hero.x=1300;spotter.hero.y=800;spotter.anchor={x:1300,y:800};
+  match.refreshVision();
+
+  assert.equal(red.canSee(match.championTargets.find(target=>target.id===blue.profile.id)!),false);
+  brain.step(BATTLEFIELD_AI_RULES.interval);
+  assert.notEqual(brain.state,'fight');
+
+  spotter.hero.x=820;spotter.hero.y=500;spotter.anchor={x:820,y:500};
+  match.refreshVision();
+  assert.equal(red.canSee(match.championTargets.find(target=>target.id===blue.profile.id)!),true);
+  brain.step(BATTLEFIELD_AI_RULES.interval);
+  assert.equal(brain.state,'fight');
+  assert.equal(red.command.kind,'attack');
+  if(red.command.kind==='attack')assert.equal(red.command.targetId,blue.profile.id);
+});
