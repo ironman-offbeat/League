@@ -95,7 +95,11 @@ test('battlefield AI target selection uses shared team vision instead of private
 
   red.hero.x=500;red.hero.y=500;red.anchor={x:500,y:500};
   blue.hero.x=845;blue.hero.y=500;blue.anchor={x:845,y:500};
-  spotter.hero.x=1300;spotter.hero.y=800;spotter.anchor={x:1300,y:800};
+  for(const ally of match.opponents.slice(1)){
+    ally.hero.x=1400;ally.hero.y=900;ally.anchor={x:1400,y:900};
+  }
+  for(const structure of match.structures('red'))structure.alive=false;
+  spotter.hero.x=1400;spotter.hero.y=900;spotter.anchor={x:1400,y:900};
   match.refreshVision();
 
   assert.equal(red.canSee(match.championTargets.find(target=>target.id===blue.profile.id)!),false);
