@@ -112,7 +112,7 @@ export class Abilities {
     if(this.scout){this.scout.remaining-=dt;if(this.scout.remaining<=0)this.scout=null;else this.reveal();}
     if(this.pet)this.stepPet(dt);
     if(c.profile.kit==='curse'){
-      const a=this.config.curse.aura,targets=c.enemies.filter(e=>e.alive&&skillTarget(e)&&c.canSee(e)&&distance(c.hero,e)<=a.range);
+      const a=this.config.curse.aura,direct=c.command.kind==='attack'?c.command.targetId:null,targets=c.enemies.filter(e=>e.alive&&skillTarget(e)&&c.canSee(e)&&distance(c.hero,e)<=a.range&&(e.id===direct||c.autoTargetAllowed(e)));
       const canAura=c.ranks.W>0&&c.canAct&&!this.pull&&!c.dash&&['idle','attack','attackMove'].includes(c.command.kind)&&targets.length>0&&c.hero.mana-a.costPerSecond*dt>=this.reserve;
       if(this.aura&&!canAura){this.aura=false;this.auraLock=a.restart;}
       if(canAura&&this.auraLock<=0){this.aura=true;c.hero.mana-=a.costPerSecond*dt;for(const e of targets)c.hurt(e,(a.damage+e.maxHp*a.hpRatio)*dt,'W',false,'magic');}
@@ -136,7 +136,7 @@ export class Abilities {
     const c=this.owner,p=this.pet!,cfg=this.config.flame.pet;p.remaining-=dt;p.cooldown=Math.max(0,p.cooldown-dt);
     if(p.remaining<=0||p.hp<=0){this.pet=null;return;}
     const direct=c.command.kind==='attack'?c.command.targetId:null;
-    const targets=c.enemies.filter(e=>e.alive&&skillTarget(e)&&c.canSee(e)&&distance(c.hero,e)<=cfg.leash);
+    const targets=c.enemies.filter(e=>e.alive&&skillTarget(e)&&c.canSee(e)&&distance(c.hero,e)<=cfg.leash&&(e.id===direct||c.autoTargetAllowed(e)));
     const target=targets.find(e=>e.id===direct)??targets.sort((a,b)=>distance(p,a)-distance(p,b))[0];
     const goal=distance(p,c.hero)>cfg.leash?c.hero:target??c.hero;
     const reach=goal===c.hero?45:cfg.range,d=distance(p,goal);

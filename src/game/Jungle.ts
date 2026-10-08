@@ -1,6 +1,9 @@
 import type { Point } from './config.ts';
+import { freshStatus, mitigate, tickStatus } from './effects.ts';
+import type { DamageType } from './effects.ts';
 import { BATTLEFIELD_NAVIGATION } from './navigation.ts';
 import type { NavigationTeam } from './navigation.ts';
+import type { Target } from './targets.ts';
 
 export type JungleBuff='red'|'blue';
 export type JungleCampDefinition={
@@ -15,6 +18,7 @@ export type JungleCampDefinition={
 export const JUNGLE={
   firstSpawn:15,
   respawn:45,
+  monster:{hp:1400,armor:20,magicResist:20},
   camps:[
     {id:'blue-blue',side:'blue',buff:'blue',nodeId:'blue-jungle-top',firstSpawn:15,respawn:45},
     {id:'blue-red',side:'blue',buff:'red',nodeId:'blue-jungle-bottom',firstSpawn:15,respawn:45},
@@ -23,17 +27,39 @@ export const JUNGLE={
   ] as const satisfies readonly JungleCampDefinition[],
 } as const;
 
-export class JungleCamp {
+export class JungleCamp implements Target {
   readonly definition:JungleCampDefinition;
   readonly point:Point;
+  readonly kind='monster' as const;
+  x:number;
+  y:number;
+  hp:number=JUNGLE.monster.hp;
+  maxHp:number=JUNGLE.monster.hp;
+  armor:number=JUNGLE.monster.armor;
+  magicResist:number=JUNGLE.monster.magicResist;
   alive=false;
+  visible=true;
+  respawn=0;
   generation=0;
+  revealed=0;
+  alert=0;
+  aggro:string|null=null;
+  attackCooldown=0;
+  stunned=0;
+  rooted=0;
+  airborne=0;
+  slow=0;
+  slowRemaining=0;
+  marked=0;
   nextSpawnAt:number|null;
   lastDefeatedAt:number|null=null;
+  private time=0;
 
   constructor(definition:JungleCampDefinition){
     this.definition={...definition};
     this.point=BATTLEFIELD_NAVIGATION.node(definition.nodeId).point;
+    this.x=this.point.x;
+    this.y=this.point.y;
     this.nextSpawnAt=definition.firstSpawn;
   }
 
@@ -41,21 +67,48 @@ export class JungleCamp {
   get side(){return this.definition.side;}
   get buff(){return this.definition.buff;}
 
-  step(time:number){
-    if(!Number.isFinite(time)||time<0)throw new Error('jungle time must be finite and nonnegative');
-    if(this.alive||this.nextSpawnAt===null||time+1e-8<this.nextSpawnAt)return false;
+  step(time:number,dt=0){
+    if(!Number.isFinite(time)||time<0||!Number.isFinite(dt)||dt<0)throw new Error('jungle time must be finite and nonnegative');
+    this.time=time;
+    if(this.alive){
+      tickStatus(this,dt);
+      this.revealed=Math.max(0,this.revealed-dt);
+      this.alert=Math.max(0,this.alert-dt);
+      this.attackCooldown=Math.max(0,this.attackCooldown-dt);
+      this.respawn=0;
+      return false;
+    }
+    if(this.nextSpawnAt===null||time+1e-8<this.nextSpawnAt){
+      this.respawn=this.respawnRemaining(time);
+      return false;
+    }
     this.alive=true;
+    this.hp=this.maxHp;
+    Object.assign(this,freshStatus(),{revealed:0,alert:0,aggro:null,attackCooldown:0,respawn:0});
     if(this.lastDefeatedAt!==null)this.generation++;
     this.nextSpawnAt=null;
     return true;
   }
 
+  receiveDamage(raw:number,type:DamageType='physical'){
+    if(!this.alive)return 0;
+    const damage=mitigate(raw,type==='physical'?this.armor:this.magicResist);
+    const lost=Math.min(this.hp,damage);
+    this.hp-=lost;
+    if(this.hp<=0)this.defeat(this.time);
+    return lost;
+  }
+
   defeat(time:number){
     if(!Number.isFinite(time)||time<0)throw new Error('jungle time must be finite and nonnegative');
     if(!this.alive)return false;
+    this.time=time;
     this.alive=false;
+    this.hp=0;
     this.lastDefeatedAt=time;
     this.nextSpawnAt=time+this.definition.respawn;
+    this.respawn=this.definition.respawn;
+    Object.assign(this,freshStatus(),{revealed:0,alert:0,aggro:null,attackCooldown:0});
     return true;
   }
 
@@ -84,7 +137,7 @@ export class JungleState {
     return camp;
   }
 
-  step(time:number){
-    for(const camp of this.camps)camp.step(time);
+  step(time:number,dt=0){
+    for(const camp of this.camps)camp.step(time,dt);
   }
 }

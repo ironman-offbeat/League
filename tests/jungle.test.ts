@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RULES } from '../src/game/config.ts';
+import { damageTarget } from '../src/game/targets.ts';
 import { BattlefieldMatch } from '../src/game/BattlefieldMatch.ts';
 import { JUNGLE, JungleState } from '../src/game/Jungle.ts';
 import { BATTLEFIELD_NAVIGATION } from '../src/game/navigation.ts';
@@ -78,4 +79,83 @@ test('jungle lifecycle validates duplicate ids and invalid timing data',()=>{
   assert.throws(()=>new JungleState([
     {id:'bad',side:'blue',buff:'blue',nodeId:'blue-jungle-top',firstSpawn:0,respawn:0},
   ]));
+});
+
+
+test('jungle camps are shared neutral combat targets for both teams',()=>{
+  const match=new BattlefieldMatch();
+  const camp=match.jungle.camp('blue-red');
+  assert.equal(camp.kind,'monster');
+  assert.ok(match.members.every(actor=>actor.enemies.includes(camp)));
+  assert.ok(match.opponents.every(actor=>actor.enemies.includes(camp)));
+  assert.equal(match.members[0].autoTargetAllowed(camp),false);
+  assert.equal(match.opponents[0].autoTargetAllowed(camp),false);
+});
+
+test('a visible jungle monster accepts champion attacks, takes damage and schedules its own respawn',()=>{
+  const match=new BattlefieldMatch();
+  step(match,JUNGLE.firstSpawn);
+  const camp=match.jungle.camp('blue-red');
+  const amumu=match.members.find(actor=>actor.visualId==='amumu')!;
+  amumu.hero.x=camp.x-25;amumu.hero.y=camp.y;amumu.anchor={x:amumu.hero.x,y:amumu.hero.y};
+  match.refreshVision();
+
+  assert.equal(match.canSee('blue',camp),true);
+  assert.ok(amumu.attack(camp.id,{x:camp.x,y:camp.y}));
+  const hp=camp.hp;
+  step(match,1.5);
+  assert.ok(camp.hp<hp);
+
+  const generation=camp.generation;
+  damageTarget(camp,1e9,'physical','basic');
+  assert.equal(camp.alive,false);
+  assert.equal(camp.hp,0);
+  assert.equal(camp.generation,generation);
+  assert.equal(camp.respawnRemaining(match.elapsed),JUNGLE.respawn);
+  assert.equal(amumu.attack(camp.id,{x:camp.x,y:camp.y}),false);
+
+  step(match,JUNGLE.respawn);
+  assert.equal(camp.alive,true);
+  assert.equal(camp.hp,camp.maxHp);
+  assert.equal(camp.generation,generation+1);
+});
+
+test('neutral jungle monsters obey battlefield team vision instead of global visibility',()=>{
+  const match=new BattlefieldMatch();
+  step(match,JUNGLE.firstSpawn);
+  const blueCamp=match.jungle.camp('blue-red');
+
+  for(const actor of match.members){
+    actor.hero.x=100;actor.hero.y=900;actor.anchor={x:100,y:900};
+  }
+  for(const actor of match.opponents){
+    actor.hero.x=1450;actor.hero.y=100;actor.anchor={x:1450,y:100};
+  }
+  for(const unit of match.units){
+    if(unit.kind==='minion'||unit.role==='outer'||unit.role==='inner')unit.alive=false;
+  }
+  match.vision.reset();
+  match.refreshVision();
+  assert.equal(match.canSee('blue',blueCamp),false);
+  assert.equal(match.canSee('red',blueCamp),false);
+
+  const scout=match.members[0];
+  scout.hero.x=blueCamp.x-80;scout.hero.y=blueCamp.y;scout.anchor={x:scout.hero.x,y:scout.hero.y};
+  match.refreshVision();
+  assert.equal(match.canSee('blue',blueCamp),true);
+  assert.equal(match.canSee('red',blueCamp),false);
+});
+
+test('existing battlefield AI ignores neutral monsters until jungle-AI integration arrives',()=>{
+  const match=new BattlefieldMatch({ai:true});
+  step(match,JUNGLE.firstSpawn);
+  const redAmumu=match.opponents.find(actor=>actor.visualId==='amumu')!;
+  const camp=match.jungle.camp('red-red');
+  redAmumu.hero.x=camp.x;redAmumu.hero.y=camp.y;redAmumu.anchor={x:camp.x,y:camp.y};
+  match.refreshVision();
+
+  const hp=camp.hp;
+  step(match,1);
+  assert.ok(redAmumu.command.kind!=='attack'||redAmumu.command.targetId!==camp.id);
+  assert.equal(camp.hp,hp);
 });
