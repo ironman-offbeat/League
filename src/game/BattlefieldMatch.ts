@@ -23,7 +23,8 @@ import {
 } from './navigation.ts';
 import type { LaneId, NavigationTeam } from './navigation.ts';
 import { BattlefieldAI } from './BattlefieldAI.ts';
-import { JungleState } from './Jungle.ts';
+import { JUNGLE, JungleState } from './Jungle.ts';
+import type { JungleCamp } from './Jungle.ts';
 
 export type BattlefieldTeam=NavigationTeam;
 export type BattlefieldMinionRole='melee'|'ranged'|'siege';
@@ -119,6 +120,7 @@ export class BattlefieldMatch extends Squad {
   readonly vision=new TeamVision(RULES.world.width,RULES.world.height,BATTLEFIELD_BUSHES,BATTLEFIELD.vision.cell);
   private exposedUntil=new Map<string,number>();
   private petExposedUntil=new Map<string,number>();
+  private neutralDamageVictims=new Set<Combat>();
   private serial=0;
 
   get actors(){return [...this.members,...this.opponents];}
@@ -182,7 +184,7 @@ export class BattlefieldMatch extends Squad {
   }
 
   private rewardChampion(victim:Combat){
-    if(this.result)return;
+    if(this.result||this.neutralDamageVictims.has(victim))return;
     const team=this.teamOf(victim)==='blue'?'red':'blue';
     this.kills[team]++;
     this.economy[team].add(120);
@@ -466,6 +468,51 @@ export class BattlefieldMatch extends Squad {
     unit.attackCooldown=stats.interval;
   }
 
+  private stepJungleCamp(camp:JungleCamp,dt:number){
+    if(!camp.alive)return;
+    if(camp.state==='returning'){
+      camp.stepReturn(dt);
+      return;
+    }
+
+    const target=camp.aggro?this.actors.find(actor=>actor.profile.id===camp.aggro):undefined;
+    if(!target){
+      if(camp.state==='engaged'){
+        camp.beginReturn();
+        camp.stepReturn(dt);
+      }
+      return;
+    }
+
+    if(!target.alive||
+      distance(camp.point,target.hero)>JUNGLE.monster.leash||
+      distance(camp.point,camp)>JUNGLE.monster.leash){
+      camp.beginReturn();
+      camp.stepReturn(dt);
+      return;
+    }
+
+    camp.state='engaged';
+    if(camp.stunned>0||camp.airborne>0)return;
+
+    const d=distance(camp,target.hero);
+    if(d>JUNGLE.monster.range){
+      if(camp.rooted<=0){
+        const travel=JUNGLE.monster.speed*(1-camp.slow)*dt;
+        const next=towards(camp,target.hero,Math.min(Math.max(0,d-JUNGLE.monster.range),travel));
+        camp.x=next.x;camp.y=next.y;
+      }
+      return;
+    }
+
+    if(camp.attackCooldown<=0){
+      this.neutralDamageVictims.add(target);
+      try{target.receiveDamage(JUNGLE.monster.attack,'physical');}
+      finally{this.neutralDamageVictims.delete(target);}
+      camp.attackCooldown=JUNGLE.monster.interval;
+    }
+  }
+
   private stepMinion(unit:BattlefieldUnit,dt:number,hits:{target:BattlefieldVictim;damage:number}[]){
     if(unit.lane===null||unit.stunned>0||unit.airborne>0)return;
     const stats=BATTLEFIELD.minions[unit.role as BattlefieldMinionRole];
@@ -517,6 +564,7 @@ export class BattlefieldMatch extends Squad {
     this.refreshVision();
     for(const brain of this.ai)brain.step(dt);
     for(const actor of this.actors)actor.step(dt,false);
+    for(const camp of this.jungle.camps)this.stepJungleCamp(camp,dt);
     this.refreshVision();
     this.updateProtection();
 
