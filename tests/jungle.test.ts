@@ -244,8 +244,12 @@ test('jungle monster resets when its aggro target dies',()=>{
   const camp=match.jungle.camp('blue-red');
   const attacker=match.members[0];
 
-  attacker.hero.x=camp.x-60;attacker.hero.y=camp.y;attacker.anchor={x:attacker.hero.x,y:attacker.hero.y};
+  attacker.hero.x=camp.x-140;attacker.hero.y=camp.y;attacker.anchor={x:attacker.hero.x,y:attacker.hero.y};
   attacker.hurt(camp,120,'test',false,'physical','basic');
+  step(match,.5);
+  assert.equal(camp.state,'engaged');
+  assert.ok(camp.x!==camp.point.x||camp.y!==camp.point.y);
+
   attacker.receiveDamage(1e9,'physical',false);
   step(match,RULES.step);
 
