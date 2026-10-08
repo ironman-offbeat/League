@@ -120,6 +120,7 @@ export class BattlefieldMatch extends Squad {
   readonly vision=new TeamVision(RULES.world.width,RULES.world.height,BATTLEFIELD_BUSHES,BATTLEFIELD.vision.cell);
   private exposedUntil=new Map<string,number>();
   private petExposedUntil=new Map<string,number>();
+  private neutralDamageVictims=new Set<Combat>();
   private serial=0;
 
   get actors(){return [...this.members,...this.opponents];}
@@ -183,7 +184,7 @@ export class BattlefieldMatch extends Squad {
   }
 
   private rewardChampion(victim:Combat){
-    if(this.result)return;
+    if(this.result||this.neutralDamageVictims.has(victim))return;
     const team=this.teamOf(victim)==='blue'?'red':'blue';
     this.kills[team]++;
     this.economy[team].add(120);
@@ -505,7 +506,9 @@ export class BattlefieldMatch extends Squad {
     }
 
     if(camp.attackCooldown<=0){
-      target.receiveDamage(JUNGLE.monster.attack,'physical');
+      this.neutralDamageVictims.add(target);
+      try{target.receiveDamage(JUNGLE.monster.attack,'physical');}
+      finally{this.neutralDamageVictims.delete(target);}
       camp.attackCooldown=JUNGLE.monster.interval;
     }
   }
