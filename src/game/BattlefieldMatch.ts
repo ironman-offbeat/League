@@ -11,6 +11,8 @@ import type { Purchase } from './equipment.ts';
 import { freshStatus, tickStatus, towards } from './effects.ts';
 import { damageTarget } from './targets.ts';
 import type { Target } from './targets.ts';
+import { TeamVision } from './vision.ts';
+import type { VisionSource, VisionSubject } from './vision.ts';
 import {
   BATTLEFIELD_NAVIGATION,
   battlefieldLaneRoute,
@@ -59,6 +61,7 @@ export const BATTLEFIELD={
     siege:{hp:650,armor:15,range:175,attack:55,interval:2,speed:60},
   },
   buildingRewards:{outer:150,inner:200,inhibitor:100,nexus:0},
+  vision:{champion:340,minion:235,tower:310,cell:80,attackReveal:1.5},
 } as const;
 
 export const BATTLEFIELD_ROLE_BY_CHAMPION={
@@ -97,6 +100,8 @@ export class BattlefieldMatch extends Squad {
   nextWave=BATTLEFIELD.firstWave;
   result:BattlefieldResult|null=null;
   ai:BattlefieldAI[]=[];
+  readonly vision=new TeamVision(RULES.world.width,RULES.world.height,[],BATTLEFIELD.vision.cell);
+  private exposedUntil=new Map<string,number>();
   private serial=0;
 
   get actors(){return [...this.members,...this.opponents];}
@@ -130,9 +135,17 @@ export class BattlefieldMatch extends Squad {
     this.championTargets.push(...redTargets);
     this.enemies.push(...redTargets);
 
-    for(const actor of this.actors)actor.onDeath=()=>this.rewardChampion(actor);
+    for(const actor of this.actors){
+      const team=this.teamOf(actor);
+      actor.onDeath=()=>this.rewardChampion(actor);
+      actor.visibilityResolver=target=>this.canSee(team,target);
+      actor.lastSeenResolver=target=>this.lastSeen(team,target);
+      actor.memoryResolver=(targetId,generation)=>this.lastSeenById(team,targetId,generation);
+      actor.onOffensiveAction=()=>this.expose(actor);
+    }
     if(options.ai)this.ai=this.opponents.map((actor,index)=>new BattlefieldAI(this,actor,index));
     this.updateProtection();
+    this.refreshVision();
   }
 
   private createChampion(profile:Champion,team:BattlefieldTeam,enemies:Target[]){
@@ -207,6 +220,57 @@ export class BattlefieldMatch extends Squad {
 
   minions(team?:BattlefieldTeam,lane?:LaneId){
     return this.units.filter(unit=>unit.kind==='minion'&&(!team||unit.team===team)&&(!lane||unit.lane===lane));
+  }
+
+  private targetTeam(target:Target):BattlefieldTeam|null{
+    const unitTeam=(target as Partial<BattlefieldUnit>).team;
+    if(unitTeam==='blue'||unitTeam==='red')return unitTeam;
+    if(this.championTargets.some(value=>value===target||value.id===target.id))return target.id.startsWith('red-')?'red':'blue';
+    return null;
+  }
+
+  private subject(target:Target):VisionSubject|null{
+    const team=this.targetTeam(target);
+    if(!team)return null;
+    return {
+      id:target.id,team,x:target.x,y:target.y,
+      generation:target.generation,alive:target.alive,
+      exposed:(this.exposedUntil.get(target.id)??0)>this.elapsed,
+    };
+  }
+
+  canSee(team:BattlefieldTeam,target:Target){
+    const subject=this.subject(target);
+    return subject?this.vision.canSee(team,subject):target.visible||target.revealed>0;
+  }
+
+  lastSeen(team:BattlefieldTeam,target:Target){return this.lastSeenById(team,target.id,target.generation);}
+
+  lastSeenById(team:BattlefieldTeam,id:string,generation:number){
+    const sighting=this.vision.lastSeen(team,id);
+    return sighting&&sighting.generation===generation?{x:sighting.x,y:sighting.y}:null;
+  }
+
+  expose(actor:Combat){this.exposedUntil.set(actor.profile.id,this.elapsed+BATTLEFIELD.vision.attackReveal);}
+
+  refreshVision(){
+    const sources:VisionSource[]=[];
+    for(const actor of this.actors)if(actor.alive){
+      sources.push({team:this.teamOf(actor),x:actor.hero.x,y:actor.hero.y,radius:BATTLEFIELD.vision.champion,alive:true});
+    }
+    for(const unit of this.units)if(unit.alive&&(unit.kind==='minion'||unit.role==='outer'||unit.role==='inner')){
+      sources.push({
+        team:unit.team,x:unit.x,y:unit.y,
+        radius:unit.kind==='minion'?BATTLEFIELD.vision.minion:BATTLEFIELD.vision.tower,
+        alive:true,
+      });
+    }
+    const subjects:VisionSubject[]=[];
+    for(const target of [...this.championTargets,...this.units]){
+      const subject=this.subject(target);
+      if(subject)subjects.push(subject);
+    }
+    this.vision.update(sources,subjects,this.elapsed);
   }
 
   private createUnit(team:BattlefieldTeam,lane:LaneId|null,role:BattlefieldUnit['role'],point:Point):BattlefieldUnit{
@@ -385,8 +449,10 @@ export class BattlefieldMatch extends Squad {
     }
 
     this.updateProtection();
+    this.refreshVision();
     for(const brain of this.ai)brain.step(dt);
     for(const actor of this.actors)actor.step(dt,false);
+    this.refreshVision();
     this.updateProtection();
 
     const hits:{target:BattlefieldVictim;damage:number}[]=[];
