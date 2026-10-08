@@ -259,3 +259,21 @@ test('jungle monster resets when its aggro target dies',()=>{
   assert.equal(camp.hp,camp.maxHp);
   assert.equal(camp.aggro,null);
 });
+
+
+test('jungle monster champion kills stay neutral and do not credit the opposing team',()=>{
+  const match=new BattlefieldMatch();
+  step(match,JUNGLE.firstSpawn);
+  const camp=match.jungle.camp('blue-red');
+  const victim=match.members[0];
+
+  victim.hero.x=camp.x-30;victim.hero.y=camp.y;victim.anchor={x:victim.hero.x,y:victim.hero.y};
+  victim.hero.hp=1;
+  victim.hurt(camp,1,'test',false,'physical','basic');
+
+  const before={blue:match.kills.blue,red:match.kills.red};
+  step(match,RULES.step);
+
+  assert.equal(victim.alive,false);
+  assert.deepEqual(match.kills,before);
+});
