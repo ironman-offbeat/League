@@ -296,7 +296,20 @@ export class ArenaScene extends Phaser.Scene {
         g.lineStyle(2,0xffdf9c);g.strokeCircle(u.x,u.y,u.kind==='building'?43:21);
       }
     }
-    const liveIds=new Set([...match.units.map(u=>u.id),...match.actors.map(c=>c.profile.id)]);
+    for(const camp of match.jungle.camps){
+      if(!camp.alive||!match.canSee('blue',camp))continue;
+      const color=camp.buff==='red'?0xc66f56:0x668bc5;
+      g.fillStyle(0x102018,.7);g.fillEllipse(camp.x+3,camp.y+18,62,24);
+      g.fillStyle(color,.28);g.fillCircle(camp.x,camp.y,29);
+      g.lineStyle(4,color,.9);g.strokeCircle(camp.x,camp.y,25);
+      g.fillStyle(color,.82);g.fillCircle(camp.x,camp.y,14);
+      g.fillStyle(0x142a22);g.fillRect(camp.x-30,camp.y-42,60,5);
+      g.fillStyle(color);g.fillRect(camp.x-29,camp.y-41,58*camp.hp/camp.maxHp,3);
+      if(this.combat.command.kind==='attack'&&this.combat.command.targetId===camp.id){
+        g.lineStyle(2,0xffdf9c);g.strokeCircle(camp.x,camp.y,35);
+      }
+    }
+    const liveIds=new Set([...match.units.map(u=>u.id),...match.jungle.camps.map(c=>c.id),...match.actors.map(c=>c.profile.id)]);
     for(const id of this.lastPositions.keys())if(!liveIds.has(id))this.lastPositions.delete(id);
   }
 
