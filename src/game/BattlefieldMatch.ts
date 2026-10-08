@@ -23,7 +23,7 @@ import {
 } from './navigation.ts';
 import type { LaneId, NavigationTeam } from './navigation.ts';
 import { BattlefieldAI } from './BattlefieldAI.ts';
-import { JungleState } from './Jungle.ts';
+import { JUNGLE, JungleCamp, JungleState } from './Jungle.ts';
 
 export type BattlefieldTeam=NavigationTeam;
 export type BattlefieldMinionRole='melee'|'ranged'|'siege';
@@ -466,6 +466,50 @@ export class BattlefieldMatch extends Squad {
     unit.attackCooldown=stats.interval;
   }
 
+  private returnJungleCamp(camp:JungleCamp,dt:number){
+    camp.clearAggro();
+    const d=distance(camp,camp.point);
+    if(d<=JUNGLE.monster.homeRadius){
+      camp.restoreAtHome();
+      return;
+    }
+    if(camp.rooted>0||camp.airborne>0)return;
+    const speed=JUNGLE.monster.resetSpeed*(1-camp.slow);
+    Object.assign(camp,towards(camp,camp.point,Math.min(d,speed*dt)));
+    if(distance(camp,camp.point)<=JUNGLE.monster.homeRadius)camp.restoreAtHome();
+  }
+
+  private stepJungleCamp(camp:JungleCamp,dt:number){
+    if(!camp.alive)return;
+    if(!camp.aggro){
+      if(distance(camp,camp.point)>JUNGLE.monster.homeRadius)this.returnJungleCamp(camp,dt);
+      return;
+    }
+
+    const target=this.actors.find(actor=>actor.profile.id===camp.aggro);
+    if(!target||!target.alive||
+      distance(target.hero,camp.point)>JUNGLE.monster.leash||
+      distance(camp,camp.point)>JUNGLE.monster.leash){
+      this.returnJungleCamp(camp,dt);
+      return;
+    }
+
+    if(camp.stunned>0||camp.airborne>0)return;
+    const d=distance(camp,target.hero);
+    if(d>JUNGLE.monster.range){
+      if(camp.rooted<=0){
+        const speed=JUNGLE.monster.speed*(1-camp.slow);
+        Object.assign(camp,towards(camp,target.hero,Math.min(Math.max(0,d-JUNGLE.monster.range),speed*dt)));
+      }
+      return;
+    }
+
+    if(camp.attackCooldown<=0){
+      target.receiveDamage(JUNGLE.monster.attack,'physical');
+      camp.attackCooldown=JUNGLE.monster.interval;
+    }
+  }
+
   private stepMinion(unit:BattlefieldUnit,dt:number,hits:{target:BattlefieldVictim;damage:number}[]){
     if(unit.lane===null||unit.stunned>0||unit.airborne>0)return;
     const stats=BATTLEFIELD.minions[unit.role as BattlefieldMinionRole];
@@ -517,6 +561,7 @@ export class BattlefieldMatch extends Squad {
     this.refreshVision();
     for(const brain of this.ai)brain.step(dt);
     for(const actor of this.actors)actor.step(dt,false);
+    for(const camp of this.jungle.camps)this.stepJungleCamp(camp,dt);
     this.refreshVision();
     this.updateProtection();
 

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { RULES } from '../src/game/config.ts';
+import { RULES, distance } from '../src/game/config.ts';
 import { damageTarget } from '../src/game/targets.ts';
 import { BattlefieldMatch } from '../src/game/BattlefieldMatch.ts';
 import { JUNGLE, JungleState } from '../src/game/Jungle.ts';
@@ -158,4 +158,93 @@ test('existing battlefield AI ignores neutral monsters until jungle-AI integrati
   step(match,1);
   assert.ok(redAmumu.command.kind!=='attack'||redAmumu.command.targetId!==camp.id);
   assert.equal(camp.hp,hp);
+});
+
+
+test('jungle monster stays neutral until attacked even when a champion stands nearby',()=>{
+  const match=new BattlefieldMatch();
+  step(match,JUNGLE.firstSpawn);
+  const camp=match.jungle.camp('blue-red');
+  const amumu=match.members.find(actor=>actor.visualId==='amumu')!;
+  amumu.hero.x=camp.x+20;amumu.hero.y=camp.y;amumu.anchor={x:amumu.hero.x,y:amumu.hero.y};
+  match.refreshVision();
+
+  const hp=amumu.hero.hp;
+  step(match,JUNGLE.monster.interval*2);
+  assert.equal(camp.aggro,null);
+  assert.equal(amumu.hero.hp,hp);
+});
+
+test('jungle monster retaliates against the champion that damaged it',()=>{
+  const match=new BattlefieldMatch();
+  step(match,JUNGLE.firstSpawn);
+  const camp=match.jungle.camp('blue-red');
+  const amumu=match.members.find(actor=>actor.visualId==='amumu')!;
+  amumu.hero.x=camp.x+20;amumu.hero.y=camp.y;amumu.anchor={x:amumu.hero.x,y:amumu.hero.y};
+
+  amumu.hurt(camp,80,'test',false,'physical','basic');
+  assert.equal(camp.aggro,amumu.profile.id);
+  assert.ok(camp.hp<camp.maxHp);
+
+  const hp=amumu.hero.hp;
+  step(match,RULES.step);
+  assert.ok(amumu.hero.hp<hp);
+  assert.equal(camp.attackCooldown>0,true);
+});
+
+test('jungle monster chases its aggro target only inside the camp leash',()=>{
+  const match=new BattlefieldMatch();
+  step(match,JUNGLE.firstSpawn);
+  const camp=match.jungle.camp('blue-red');
+  const amumu=match.members.find(actor=>actor.visualId==='amumu')!;
+  amumu.hero.x=camp.point.x+180;amumu.hero.y=camp.point.y;amumu.anchor={x:amumu.hero.x,y:amumu.hero.y};
+
+  amumu.hurt(camp,40,'test',false,'physical','basic');
+  const start={x:camp.x,y:camp.y};
+  step(match,.5);
+
+  assert.ok(camp.x>start.x);
+  assert.ok(distance(camp,camp.point)<JUNGLE.monster.leash);
+  assert.equal(camp.aggro,amumu.profile.id);
+});
+
+test('jungle monster drops aggro, returns home and fully resets after its target leaves the leash',()=>{
+  const match=new BattlefieldMatch();
+  step(match,JUNGLE.firstSpawn);
+  const camp=match.jungle.camp('blue-red');
+  const amumu=match.members.find(actor=>actor.visualId==='amumu')!;
+
+  amumu.hero.x=camp.point.x+180;amumu.hero.y=camp.point.y;amumu.anchor={x:amumu.hero.x,y:amumu.hero.y};
+  amumu.hurt(camp,300,'test',false,'physical','basic');
+  step(match,.75);
+  assert.ok(distance(camp,camp.point)>0);
+  assert.ok(camp.hp<camp.maxHp);
+
+  amumu.hero.x=camp.point.x+JUNGLE.monster.leash+60;amumu.hero.y=camp.point.y;
+  amumu.anchor={x:amumu.hero.x,y:amumu.hero.y};
+  step(match,2);
+
+  assert.equal(camp.aggro,null);
+  assert.equal(distance(camp,camp.point),0);
+  assert.equal(camp.hp,camp.maxHp);
+  assert.equal(camp.stunned,0);
+  assert.equal(camp.rooted,0);
+  assert.equal(camp.slowRemaining,0);
+});
+
+test('jungle monster resets when its aggro target dies',()=>{
+  const match=new BattlefieldMatch();
+  step(match,JUNGLE.firstSpawn);
+  const camp=match.jungle.camp('blue-red');
+  const amumu=match.members.find(actor=>actor.visualId==='amumu')!;
+  amumu.hero.x=camp.x+25;amumu.hero.y=camp.y;amumu.anchor={x:amumu.hero.x,y:amumu.hero.y};
+
+  amumu.hurt(camp,100,'test',false,'physical','basic');
+  assert.equal(camp.aggro,amumu.profile.id);
+  amumu.receiveDamage(1e9);
+  step(match,RULES.step);
+
+  assert.equal(camp.aggro,null);
+  assert.equal(distance(camp,camp.point),0);
+  assert.equal(camp.hp,camp.maxHp);
 });
