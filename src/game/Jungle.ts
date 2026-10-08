@@ -33,10 +33,10 @@ export class JungleCamp implements Target {
   readonly kind='monster' as const;
   x:number;
   y:number;
-  hp=JUNGLE.monster.hp;
-  maxHp=JUNGLE.monster.hp;
-  armor=JUNGLE.monster.armor;
-  magicResist=JUNGLE.monster.magicResist;
+  hp:number=JUNGLE.monster.hp;
+  maxHp:number=JUNGLE.monster.hp;
+  armor:number=JUNGLE.monster.armor;
+  magicResist:number=JUNGLE.monster.magicResist;
   alive=false;
   visible=true;
   respawn=0;
