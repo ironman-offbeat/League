@@ -12,7 +12,7 @@ import { freshStatus, tickStatus, towards } from './effects.ts';
 import { damageTarget } from './targets.ts';
 import type { Target } from './targets.ts';
 import { TeamVision } from './vision.ts';
-import type { VisionSource, VisionSubject } from './vision.ts';
+import type { Bush, VisionSource, VisionSubject } from './vision.ts';
 import {
   BATTLEFIELD_NAVIGATION,
   battlefieldLaneRoute,
@@ -74,6 +74,20 @@ export const BATTLEFIELD_ROLE_BY_CHAMPION={
 const LANES:readonly LaneId[]=['top','mid','bottom'];
 const STRUCTURE_ORDER:readonly Exclude<BattlefieldStructureRole,'nexus'>[]=['outer','inner','inhibitor'];
 
+function bushAround(id:string,nodeId:string,width:number,height:number):Bush{
+  const point=BATTLEFIELD_NAVIGATION.node(nodeId).point;
+  return {id,x:point.x-width/2,y:point.y-height/2,width,height};
+}
+
+export const BATTLEFIELD_BUSHES:readonly Bush[]=[
+  bushAround('top-river-brush','top-river',200,90),
+  bushAround('mid-blue-river-brush','mid-blue-river',140,100),
+  bushAround('river-north-brush','river-north',140,100),
+  bushAround('river-south-brush','river-south',140,100),
+  bushAround('mid-red-river-brush','mid-red-river',140,100),
+  bushAround('bottom-river-brush','bottom-river',200,90),
+];
+
 export function battlefieldFountain(team:BattlefieldTeam):Point{
   return BATTLEFIELD_NAVIGATION.node(team==='blue'?'blue-base':'red-base').point;
 }
@@ -100,7 +114,7 @@ export class BattlefieldMatch extends Squad {
   nextWave=BATTLEFIELD.firstWave;
   result:BattlefieldResult|null=null;
   ai:BattlefieldAI[]=[];
-  readonly vision=new TeamVision(RULES.world.width,RULES.world.height,[],BATTLEFIELD.vision.cell);
+  readonly vision=new TeamVision(RULES.world.width,RULES.world.height,BATTLEFIELD_BUSHES,BATTLEFIELD.vision.cell);
   private exposedUntil=new Map<string,number>();
   private serial=0;
 
@@ -243,6 +257,10 @@ export class BattlefieldMatch extends Squad {
     const subject=this.subject(target);
     return subject?this.vision.canSee(team,subject):target.visible||target.revealed>0;
   }
+
+  bushAt(point:Point){return this.vision.bushAt(point);}
+  pointVisible(team:BattlefieldTeam,point:Point){return this.vision.pointVisible(team,point);}
+  terrain(team:BattlefieldTeam,point:Point){return this.vision.terrain(team,point);}
 
   lastSeen(team:BattlefieldTeam,target:Target){return this.lastSeenById(team,target.id,target.generation);}
 
