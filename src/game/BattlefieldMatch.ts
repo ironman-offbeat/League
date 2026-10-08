@@ -139,8 +139,8 @@ export class BattlefieldMatch extends Squad {
       this.units.push(this.createUnit(team,null,'nexus',battlefieldFountain(team)));
     }
 
-    this.enemies.push(...this.units.filter(unit=>unit.team==='red'));
-    this.redTargets.push(...this.units.filter(unit=>unit.team==='blue'));
+    this.enemies.push(...this.units.filter(unit=>unit.team==='red'),...this.jungle.camps);
+    this.redTargets.push(...this.units.filter(unit=>unit.team==='blue'),...this.jungle.camps);
 
     this.members=CHAMPIONS.map(profile=>this.createChampion(profile,'blue',this.enemies));
     const blueTargets=this.members.map(championTarget);
@@ -177,7 +177,7 @@ export class BattlefieldMatch extends Squad {
     Object.assign(actor.hero,start);
     actor.anchor={...start};
     actor.hero.facing=team==='blue'?0:Math.PI;
-    actor.autoTargetAllowed=target=>target.kind!=='building'||this.supported(target,team);
+    actor.autoTargetAllowed=target=>target.kind!=='monster'&&(target.kind!=='building'||this.supported(target,team));
     return actor;
   }
 
@@ -258,6 +258,7 @@ export class BattlefieldMatch extends Squad {
   }
 
   canSee(team:BattlefieldTeam,target:Target){
+    if(target.kind==='monster')return target.alive&&this.pointVisible(team,target);
     const subject=this.subject(target);
     return subject?this.vision.canSee(team,subject):target.visible||target.revealed>0;
   }
@@ -266,7 +267,7 @@ export class BattlefieldMatch extends Squad {
   pointVisible(team:BattlefieldTeam,point:Point){return this.vision.pointVisible(team,point);}
   terrain(team:BattlefieldTeam,point:Point){return this.vision.terrain(team,point);}
 
-  lastSeen(team:BattlefieldTeam,target:Target){return this.lastSeenById(team,target.id,target.generation);}
+  lastSeen(team:BattlefieldTeam,target:Target){return target.kind==='monster'?{x:target.x,y:target.y}:this.lastSeenById(team,target.id,target.generation);}
 
   lastSeenById(team:BattlefieldTeam,id:string,generation:number){
     const sighting=this.vision.lastSeen(team,id);
@@ -499,7 +500,7 @@ export class BattlefieldMatch extends Squad {
     for(const economy of Object.values(this.economy))economy.advance(this.elapsed,this.elapsed+dt);
     const previous=this.elapsed;
     this.elapsed+=dt;
-    this.jungle.step(this.elapsed);
+    this.jungle.step(this.elapsed,dt);
     while(this.nextWave<=this.elapsed+1e-8){
       if(this.nextWave>=previous-1e-8)this.spawnWave();
       this.nextWave+=BATTLEFIELD.waveInterval;
