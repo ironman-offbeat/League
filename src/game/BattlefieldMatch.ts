@@ -61,7 +61,7 @@ export const BATTLEFIELD={
     siege:{hp:650,armor:15,range:175,attack:55,interval:2,speed:60},
   },
   buildingRewards:{outer:150,inner:200,inhibitor:100,nexus:0},
-  vision:{champion:340,minion:235,tower:310,cell:80,attackReveal:1.5},
+  vision:{champion:340,minion:235,tower:310,scout:260,cell:80,attackReveal:1.5},
 } as const;
 
 export const BATTLEFIELD_ROLE_BY_CHAMPION={
@@ -116,6 +116,7 @@ export class BattlefieldMatch extends Squad {
   ai:BattlefieldAI[]=[];
   readonly vision=new TeamVision(RULES.world.width,RULES.world.height,BATTLEFIELD_BUSHES,BATTLEFIELD.vision.cell);
   private exposedUntil=new Map<string,number>();
+  private petExposedUntil=new Map<string,number>();
   private serial=0;
 
   get actors(){return [...this.members,...this.opponents];}
@@ -156,6 +157,7 @@ export class BattlefieldMatch extends Squad {
       actor.lastSeenResolver=target=>this.lastSeen(team,target);
       actor.memoryResolver=(targetId,generation)=>this.lastSeenById(team,targetId,generation);
       actor.onOffensiveAction=()=>this.expose(actor);
+      actor.onSummonOffensiveAction=()=>this.exposePet(actor);
     }
     if(options.ai)this.ai=this.opponents.map((actor,index)=>new BattlefieldAI(this,actor,index));
     this.updateProtection();
@@ -271,10 +273,37 @@ export class BattlefieldMatch extends Squad {
 
   expose(actor:Combat){this.exposedUntil.set(actor.profile.id,this.elapsed+BATTLEFIELD.vision.attackReveal);}
 
+  private petSubject(actor:Combat):VisionSubject|null{
+    const pet=actor.abilities.pet;
+    if(!pet||pet.hp<=0)return null;
+    return {
+      id:`pet:${actor.profile.id}`,
+      team:this.teamOf(actor),
+      x:pet.x,y:pet.y,
+      generation:actor.life,
+      alive:true,
+      exposed:(this.petExposedUntil.get(actor.profile.id)??0)>this.elapsed,
+    };
+  }
+
+  canSeePet(team:BattlefieldTeam,actor:Combat){
+    const subject=this.petSubject(actor);
+    return !!subject&&this.vision.canSee(team,subject);
+  }
+
+  exposePet(actor:Combat){
+    this.petExposedUntil.set(actor.profile.id,this.elapsed+BATTLEFIELD.vision.attackReveal);
+  }
+
   refreshVision(){
     const sources:VisionSource[]=[];
     for(const actor of this.actors)if(actor.alive){
       sources.push({team:this.teamOf(actor),x:actor.hero.x,y:actor.hero.y,radius:BATTLEFIELD.vision.champion,alive:true});
+      const scout=actor.abilities.scout;
+      if(scout)sources.push({
+        team:this.teamOf(actor),x:scout.x,y:scout.y,
+        radius:BATTLEFIELD.vision.scout,alive:true,revealsBush:true,
+      });
     }
     for(const unit of this.units)if(unit.alive&&(unit.kind==='minion'||unit.role==='outer'||unit.role==='inner')){
       sources.push({
@@ -286,6 +315,10 @@ export class BattlefieldMatch extends Squad {
     const subjects:VisionSubject[]=[];
     for(const target of [...this.championTargets,...this.units]){
       const subject=this.subject(target);
+      if(subject)subjects.push(subject);
+    }
+    for(const actor of this.actors){
+      const subject=this.petSubject(actor);
       if(subject)subjects.push(subject);
     }
     this.vision.update(sources,subjects,this.elapsed);
@@ -385,10 +418,15 @@ export class BattlefieldMatch extends Squad {
     if(unit.lane===null)return [];
     const enemyTeam=unit.team==='blue'?'red':'blue';
     const candidates:BattlefieldVictim[]=this.units
-      .filter(other=>other.alive&&other.team===enemyTeam&&other.kind==='minion'&&other.lane===unit.lane)
+      .filter(other=>
+        other.alive&&other.team===enemyTeam&&other.kind==='minion'&&other.lane===unit.lane&&
+        this.canSee(unit.team,other)
+      )
       .map(other=>({unit:other,point:other}));
     for(const actor of this.teamMembers(enemyTeam)){
-      if(actor.alive)candidates.push({actor,point:actor.hero,life:actor.life});
+      if(!actor.alive)continue;
+      const target=this.championTargets.find(value=>value.id===actor.profile.id);
+      if(target&&this.canSee(unit.team,target))candidates.push({actor,point:actor.hero,life:actor.life});
     }
     return candidates;
   }
@@ -409,10 +447,15 @@ export class BattlefieldMatch extends Squad {
     if(unit.attackCooldown>0)return;
     const enemyTeam=unit.team==='blue'?'red':'blue';
     const candidates:BattlefieldVictim[]=this.units
-      .filter(other=>other.alive&&other.kind==='minion'&&other.team===enemyTeam&&other.lane===unit.lane&&distance(unit,other)<=stats.range)
+      .filter(other=>
+        other.alive&&other.kind==='minion'&&other.team===enemyTeam&&other.lane===unit.lane&&
+        distance(unit,other)<=stats.range&&this.canSee(unit.team,other)
+      )
       .map(other=>({unit:other,point:other}));
     for(const actor of this.teamMembers(enemyTeam)){
-      if(actor.alive&&distance(unit,actor.hero)<=stats.range)candidates.push({actor,point:actor.hero,life:actor.life});
+      if(!actor.alive||distance(unit,actor.hero)>stats.range)continue;
+      const target=this.championTargets.find(value=>value.id===actor.profile.id);
+      if(target&&this.canSee(unit.team,target))candidates.push({actor,point:actor.hero,life:actor.life});
     }
     const target=candidates.sort((a,b)=>Number(b.unit?.kind==='minion')-Number(a.unit?.kind==='minion')||distance(unit,a.point)-distance(unit,b.point))[0];
     if(!target)return;
