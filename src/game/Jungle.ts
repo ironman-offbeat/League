@@ -1,11 +1,13 @@
+import { distance } from './config.ts';
 import type { Point } from './config.ts';
-import { freshStatus, mitigate, tickStatus } from './effects.ts';
+import { freshStatus, mitigate, tickStatus, towards } from './effects.ts';
 import type { DamageType } from './effects.ts';
 import { BATTLEFIELD_NAVIGATION } from './navigation.ts';
 import type { NavigationTeam } from './navigation.ts';
 import type { Target } from './targets.ts';
 
 export type JungleBuff='red'|'blue';
+export type JungleCampState='dormant'|'idle'|'engaged'|'returning';
 export type JungleCampDefinition={
   id:string;
   side:NavigationTeam;
@@ -18,7 +20,7 @@ export type JungleCampDefinition={
 export const JUNGLE={
   firstSpawn:15,
   respawn:45,
-  monster:{hp:1400,armor:20,magicResist:20},
+  monster:{hp:1400,armor:20,magicResist:20,attack:58,interval:1.2,range:48,speed:105,returnSpeed:145,leash:220,resetReach:5},
   camps:[
     {id:'blue-blue',side:'blue',buff:'blue',nodeId:'blue-jungle-top',firstSpawn:15,respawn:45},
     {id:'blue-red',side:'blue',buff:'red',nodeId:'blue-jungle-bottom',firstSpawn:15,respawn:45},
@@ -39,6 +41,8 @@ export class JungleCamp implements Target {
   magicResist:number=JUNGLE.monster.magicResist;
   alive=false;
   visible=true;
+  protected=false;
+  state:JungleCampState='dormant';
   respawn=0;
   generation=0;
   revealed=0;
@@ -76,6 +80,7 @@ export class JungleCamp implements Target {
       this.alert=Math.max(0,this.alert-dt);
       this.attackCooldown=Math.max(0,this.attackCooldown-dt);
       this.respawn=0;
+      if(this.aggro&&this.state==='idle')this.state='engaged';
       return false;
     }
     if(this.nextSpawnAt===null||time+1e-8<this.nextSpawnAt){
@@ -84,6 +89,8 @@ export class JungleCamp implements Target {
     }
     this.alive=true;
     this.hp=this.maxHp;
+    this.x=this.point.x;this.y=this.point.y;
+    this.state='idle';this.protected=false;
     Object.assign(this,freshStatus(),{revealed:0,alert:0,aggro:null,attackCooldown:0,respawn:0});
     if(this.lastDefeatedAt!==null)this.generation++;
     this.nextSpawnAt=null;
@@ -91,7 +98,8 @@ export class JungleCamp implements Target {
   }
 
   receiveDamage(raw:number,type:DamageType='physical'){
-    if(!this.alive)return 0;
+    if(!this.alive||this.protected)return 0;
+    if(this.aggro)this.state='engaged';
     const damage=mitigate(raw,type==='physical'?this.armor:this.magicResist);
     const lost=Math.min(this.hp,damage);
     this.hp-=lost;
@@ -105,9 +113,41 @@ export class JungleCamp implements Target {
     this.time=time;
     this.alive=false;
     this.hp=0;
+    this.state='dormant';this.protected=false;
     this.lastDefeatedAt=time;
     this.nextSpawnAt=time+this.definition.respawn;
     this.respawn=this.definition.respawn;
+    Object.assign(this,freshStatus(),{revealed:0,alert:0,aggro:null,attackCooldown:0});
+    return true;
+  }
+
+  beginReturn(){
+    if(!this.alive||this.state==='returning')return false;
+    this.state='returning';this.protected=true;
+    Object.assign(this,freshStatus(),{revealed:0,alert:0,aggro:null,attackCooldown:0});
+    return true;
+  }
+
+  stepReturn(dt:number){
+    if(!this.alive||this.state!=='returning'||dt<=0)return false;
+    const d=distance(this,this.point);
+    if(d<=JUNGLE.monster.resetReach){
+      this.resetEncounter();
+      return true;
+    }
+    const next=towards(this,this.point,Math.min(d,JUNGLE.monster.returnSpeed*dt));
+    this.x=next.x;this.y=next.y;
+    if(distance(this,this.point)<=JUNGLE.monster.resetReach){
+      this.resetEncounter();
+      return true;
+    }
+    return false;
+  }
+
+  resetEncounter(){
+    if(!this.alive)return false;
+    this.x=this.point.x;this.y=this.point.y;
+    this.hp=this.maxHp;this.state='idle';this.protected=false;
     Object.assign(this,freshStatus(),{revealed:0,alert:0,aggro:null,attackCooldown:0});
     return true;
   }
