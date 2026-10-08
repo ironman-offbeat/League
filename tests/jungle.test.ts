@@ -150,6 +150,8 @@ test('existing battlefield AI ignores neutral monsters until jungle-AI integrati
   redAmumu.hero.x=camp.x;redAmumu.hero.y=camp.y;redAmumu.anchor={x:camp.x,y:camp.y};
   match.refreshVision();
 
+  const hp=camp.hp;
   step(match,1);
   assert.ok(redAmumu.command.kind!=='attack'||redAmumu.command.targetId!==camp.id);
+  assert.equal(camp.hp,hp);
 });
