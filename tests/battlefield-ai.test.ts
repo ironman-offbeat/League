@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BattlefieldMatch } from '../src/game/BattlefieldMatch.ts';
+import { BATTLEFIELD_BUSHES, BattlefieldMatch } from '../src/game/BattlefieldMatch.ts';
 import { BATTLEFIELD_AI_RULES } from '../src/game/BattlefieldAI.ts';
 import { BATTLEFIELD_NAVIGATION, battlefieldLaneRoute, projectToRoute } from '../src/game/navigation.ts';
 import { RULES, distance } from '../src/game/config.ts';
@@ -112,6 +112,39 @@ test('battlefield AI target selection uses shared team vision instead of private
   spotter.hero.x=820;spotter.hero.y=500;spotter.anchor={x:820,y:500};
   match.refreshVision();
   assert.equal(red.canSee(match.championTargets.find(target=>target.id===blue.profile.id)!),true);
+  brain.step(BATTLEFIELD_AI_RULES.interval);
+  assert.equal(brain.state,'fight');
+  assert.equal(red.command.kind,'attack');
+  if(red.command.kind==='attack')assert.equal(red.command.targetId,blue.profile.id);
+});
+
+
+test('battlefield AI does not target a champion hidden in brush until shared vision reveals it',()=>{
+  const match=new BattlefieldMatch({ai:true});
+  match.elapsed=20;
+  const brain=match.ai[0],red=brain.actor,blue=match.members[0];
+  const bush=BATTLEFIELD_BUSHES[0],p={x:bush.x+bush.width/2,y:bush.y+bush.height/2};
+
+  for(const structure of match.structures('red'))structure.alive=false;
+  for(const actor of match.members.slice(1)){
+    actor.hero.x=100;actor.hero.y=900;actor.anchor={x:100,y:900};
+  }
+  for(const actor of match.opponents.slice(1)){
+    actor.hero.x=1400;actor.hero.y=900;actor.anchor={x:1400,y:900};
+  }
+
+  blue.hero.x=p.x;blue.hero.y=p.y;blue.anchor={...p};
+  red.hero.x=p.x;red.hero.y=bush.y+bush.height+40;red.anchor={x:red.hero.x,y:red.hero.y};
+  match.refreshVision();
+
+  const blueTarget=match.championTargets.find(target=>target.id===blue.profile.id)!;
+  assert.equal(match.canSee('red',blueTarget),false);
+  brain.step(BATTLEFIELD_AI_RULES.interval);
+  assert.ok(red.command.kind!=='attack'||red.command.targetId!==blue.profile.id);
+
+  red.hero.x=p.x-50;red.hero.y=p.y;red.anchor={x:red.hero.x,y:red.hero.y};
+  match.refreshVision();
+  assert.equal(match.canSee('red',blueTarget),true);
   brain.step(BATTLEFIELD_AI_RULES.interval);
   assert.equal(brain.state,'fight');
   assert.equal(red.command.kind,'attack');
