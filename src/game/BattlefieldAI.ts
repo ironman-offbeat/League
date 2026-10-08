@@ -70,7 +70,7 @@ export class BattlefieldAI {
     if(!c.canAct||c.dash||c.abilities.pull)return;
 
     const nearby=c.enemies.filter(target=>
-      target.alive&&!target.protected&&c.canSee(target)&&
+      target.kind!=='monster'&&target.alive&&!target.protected&&c.canSee(target)&&
       distance(c.hero,target)<=BATTLEFIELD_AI_RULES.safeRecall
     );
     const threats=nearby.filter(target=>target.kind!=='building'||this.attackTower(target)!==null);
@@ -120,7 +120,7 @@ export class BattlefieldAI {
     }
 
     const local=c.enemies.filter(target=>
-      target.alive&&!target.protected&&target.kind!=='building'&&c.canSee(target)&&
+      target.alive&&!target.protected&&target.kind!=='building'&&target.kind!=='monster'&&c.canSee(target)&&
       distance(c.hero,target)<=BATTLEFIELD_AI_RULES.engage&&
       !this.dangerousTowerAt(target,team)
     );
