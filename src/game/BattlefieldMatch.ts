@@ -11,6 +11,8 @@ import type { Purchase } from './equipment.ts';
 import { freshStatus, tickStatus, towards } from './effects.ts';
 import { damageTarget } from './targets.ts';
 import type { Target } from './targets.ts';
+import { TeamVision } from './vision.ts';
+import type { Bush, VisionSource, VisionSubject } from './vision.ts';
 import {
   BATTLEFIELD_NAVIGATION,
   battlefieldLaneRoute,
@@ -59,6 +61,7 @@ export const BATTLEFIELD={
     siege:{hp:650,armor:15,range:175,attack:55,interval:2,speed:60},
   },
   buildingRewards:{outer:150,inner:200,inhibitor:100,nexus:0},
+  vision:{champion:340,minion:235,tower:310,scout:260,cell:80,attackReveal:1.5},
 } as const;
 
 export const BATTLEFIELD_ROLE_BY_CHAMPION={
@@ -70,6 +73,20 @@ export const BATTLEFIELD_ROLE_BY_CHAMPION={
 
 const LANES:readonly LaneId[]=['top','mid','bottom'];
 const STRUCTURE_ORDER:readonly Exclude<BattlefieldStructureRole,'nexus'>[]=['outer','inner','inhibitor'];
+
+function bushAround(id:string,nodeId:string,width:number,height:number):Bush{
+  const point=BATTLEFIELD_NAVIGATION.node(nodeId).point;
+  return {id,x:point.x-width/2,y:point.y-height/2,width,height};
+}
+
+export const BATTLEFIELD_BUSHES:readonly Bush[]=[
+  bushAround('top-river-brush','top-river',200,90),
+  bushAround('mid-blue-river-brush','mid-blue-river',140,100),
+  bushAround('river-north-brush','river-north',140,100),
+  bushAround('river-south-brush','river-south',140,100),
+  bushAround('mid-red-river-brush','mid-red-river',140,100),
+  bushAround('bottom-river-brush','bottom-river',200,90),
+];
 
 export function battlefieldFountain(team:BattlefieldTeam):Point{
   return BATTLEFIELD_NAVIGATION.node(team==='blue'?'blue-base':'red-base').point;
@@ -97,6 +114,9 @@ export class BattlefieldMatch extends Squad {
   nextWave=BATTLEFIELD.firstWave;
   result:BattlefieldResult|null=null;
   ai:BattlefieldAI[]=[];
+  readonly vision=new TeamVision(RULES.world.width,RULES.world.height,BATTLEFIELD_BUSHES,BATTLEFIELD.vision.cell);
+  private exposedUntil=new Map<string,number>();
+  private petExposedUntil=new Map<string,number>();
   private serial=0;
 
   get actors(){return [...this.members,...this.opponents];}
@@ -130,9 +150,18 @@ export class BattlefieldMatch extends Squad {
     this.championTargets.push(...redTargets);
     this.enemies.push(...redTargets);
 
-    for(const actor of this.actors)actor.onDeath=()=>this.rewardChampion(actor);
+    for(const actor of this.actors){
+      const team=this.teamOf(actor);
+      actor.onDeath=()=>this.rewardChampion(actor);
+      actor.visibilityResolver=target=>this.canSee(team,target);
+      actor.lastSeenResolver=target=>this.lastSeen(team,target);
+      actor.memoryResolver=(targetId,generation)=>this.lastSeenById(team,targetId,generation);
+      actor.onOffensiveAction=()=>this.expose(actor);
+      actor.onSummonOffensiveAction=()=>this.exposePet(actor);
+    }
     if(options.ai)this.ai=this.opponents.map((actor,index)=>new BattlefieldAI(this,actor,index));
     this.updateProtection();
+    this.refreshVision();
   }
 
   private createChampion(profile:Champion,team:BattlefieldTeam,enemies:Target[]){
@@ -207,6 +236,92 @@ export class BattlefieldMatch extends Squad {
 
   minions(team?:BattlefieldTeam,lane?:LaneId){
     return this.units.filter(unit=>unit.kind==='minion'&&(!team||unit.team===team)&&(!lane||unit.lane===lane));
+  }
+
+  private targetTeam(target:Target):BattlefieldTeam|null{
+    const unitTeam=(target as Partial<BattlefieldUnit>).team;
+    if(unitTeam==='blue'||unitTeam==='red')return unitTeam;
+    if(this.championTargets.some(value=>value===target||value.id===target.id))return target.id.startsWith('red-')?'red':'blue';
+    return null;
+  }
+
+  private subject(target:Target):VisionSubject|null{
+    const team=this.targetTeam(target);
+    if(!team)return null;
+    return {
+      id:target.id,team,x:target.x,y:target.y,
+      generation:target.generation,alive:target.alive,
+      exposed:(this.exposedUntil.get(target.id)??0)>this.elapsed,
+    };
+  }
+
+  canSee(team:BattlefieldTeam,target:Target){
+    const subject=this.subject(target);
+    return subject?this.vision.canSee(team,subject):target.visible||target.revealed>0;
+  }
+
+  bushAt(point:Point){return this.vision.bushAt(point);}
+  pointVisible(team:BattlefieldTeam,point:Point){return this.vision.pointVisible(team,point);}
+  terrain(team:BattlefieldTeam,point:Point){return this.vision.terrain(team,point);}
+
+  lastSeen(team:BattlefieldTeam,target:Target){return this.lastSeenById(team,target.id,target.generation);}
+
+  lastSeenById(team:BattlefieldTeam,id:string,generation:number){
+    const sighting=this.vision.lastSeen(team,id);
+    return sighting&&sighting.generation===generation?{x:sighting.x,y:sighting.y}:null;
+  }
+
+  expose(actor:Combat){this.exposedUntil.set(actor.profile.id,this.elapsed+BATTLEFIELD.vision.attackReveal);}
+
+  private petSubject(actor:Combat):VisionSubject|null{
+    const pet=actor.abilities.pet;
+    if(!pet||pet.hp<=0)return null;
+    return {
+      id:`pet:${actor.profile.id}`,
+      team:this.teamOf(actor),
+      x:pet.x,y:pet.y,
+      generation:actor.life,
+      alive:true,
+      exposed:(this.petExposedUntil.get(actor.profile.id)??0)>this.elapsed,
+    };
+  }
+
+  canSeePet(team:BattlefieldTeam,actor:Combat){
+    const subject=this.petSubject(actor);
+    return !!subject&&this.vision.canSee(team,subject);
+  }
+
+  exposePet(actor:Combat){
+    this.petExposedUntil.set(actor.profile.id,this.elapsed+BATTLEFIELD.vision.attackReveal);
+  }
+
+  refreshVision(){
+    const sources:VisionSource[]=[];
+    for(const actor of this.actors)if(actor.alive){
+      sources.push({team:this.teamOf(actor),x:actor.hero.x,y:actor.hero.y,radius:BATTLEFIELD.vision.champion,alive:true});
+      const scout=actor.abilities.scout;
+      if(scout)sources.push({
+        team:this.teamOf(actor),x:scout.x,y:scout.y,
+        radius:BATTLEFIELD.vision.scout,alive:true,revealsBush:true,
+      });
+    }
+    for(const unit of this.units)if(unit.alive&&(unit.kind==='minion'||unit.role==='outer'||unit.role==='inner')){
+      sources.push({
+        team:unit.team,x:unit.x,y:unit.y,
+        radius:unit.kind==='minion'?BATTLEFIELD.vision.minion:BATTLEFIELD.vision.tower,
+        alive:true,
+      });
+    }
+    const subjects:VisionSubject[]=[];
+    for(const target of [...this.championTargets,...this.units]){
+      const subject=this.subject(target);
+      if(subject)subjects.push(subject);
+    }
+    for(const actor of this.actors){
+      const subject=this.petSubject(actor);
+      if(subject)subjects.push(subject);
+    }
+    this.vision.update(sources,subjects,this.elapsed);
   }
 
   private createUnit(team:BattlefieldTeam,lane:LaneId|null,role:BattlefieldUnit['role'],point:Point):BattlefieldUnit{
@@ -303,10 +418,15 @@ export class BattlefieldMatch extends Squad {
     if(unit.lane===null)return [];
     const enemyTeam=unit.team==='blue'?'red':'blue';
     const candidates:BattlefieldVictim[]=this.units
-      .filter(other=>other.alive&&other.team===enemyTeam&&other.kind==='minion'&&other.lane===unit.lane)
+      .filter(other=>
+        other.alive&&other.team===enemyTeam&&other.kind==='minion'&&other.lane===unit.lane&&
+        this.canSee(unit.team,other)
+      )
       .map(other=>({unit:other,point:other}));
     for(const actor of this.teamMembers(enemyTeam)){
-      if(actor.alive)candidates.push({actor,point:actor.hero,life:actor.life});
+      if(!actor.alive)continue;
+      const target=this.championTargets.find(value=>value.id===actor.profile.id);
+      if(target&&this.canSee(unit.team,target))candidates.push({actor,point:actor.hero,life:actor.life});
     }
     return candidates;
   }
@@ -327,10 +447,15 @@ export class BattlefieldMatch extends Squad {
     if(unit.attackCooldown>0)return;
     const enemyTeam=unit.team==='blue'?'red':'blue';
     const candidates:BattlefieldVictim[]=this.units
-      .filter(other=>other.alive&&other.kind==='minion'&&other.team===enemyTeam&&other.lane===unit.lane&&distance(unit,other)<=stats.range)
+      .filter(other=>
+        other.alive&&other.kind==='minion'&&other.team===enemyTeam&&other.lane===unit.lane&&
+        distance(unit,other)<=stats.range&&this.canSee(unit.team,other)
+      )
       .map(other=>({unit:other,point:other}));
     for(const actor of this.teamMembers(enemyTeam)){
-      if(actor.alive&&distance(unit,actor.hero)<=stats.range)candidates.push({actor,point:actor.hero,life:actor.life});
+      if(!actor.alive||distance(unit,actor.hero)>stats.range)continue;
+      const target=this.championTargets.find(value=>value.id===actor.profile.id);
+      if(target&&this.canSee(unit.team,target))candidates.push({actor,point:actor.hero,life:actor.life});
     }
     const target=candidates.sort((a,b)=>Number(b.unit?.kind==='minion')-Number(a.unit?.kind==='minion')||distance(unit,a.point)-distance(unit,b.point))[0];
     if(!target)return;
@@ -385,8 +510,10 @@ export class BattlefieldMatch extends Squad {
     }
 
     this.updateProtection();
+    this.refreshVision();
     for(const brain of this.ai)brain.step(dt);
     for(const actor of this.actors)actor.step(dt,false);
+    this.refreshVision();
     this.updateProtection();
 
     const hits:{target:BattlefieldVictim;damage:number}[]=[];

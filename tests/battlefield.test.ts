@@ -207,6 +207,7 @@ test('new battlefield waves join live champion target arrays and ordinary combat
   renekton.hero.x=target.x-25;
   renekton.hero.y=target.y;
   renekton.anchor={x:renekton.hero.x,y:renekton.hero.y};
+  match.refreshVision();
   const hp=target.hp;
   assert.ok(renekton.attack(target.id,{x:target.x,y:target.y}));
   step(match,1.5);

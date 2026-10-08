@@ -1,7 +1,7 @@
 import { VisualDirector } from '../render/VisualDirector.ts';
 import { actorVisual, motionFor } from '../render/assets.ts';
 import { LaneMatch, LANE } from './LaneMatch.ts';
-import { BattlefieldMatch, BATTLEFIELD, BATTLEFIELD_ROLE_BY_CHAMPION } from './BattlefieldMatch.ts';
+import { BattlefieldMatch, BATTLEFIELD, BATTLEFIELD_BUSHES, BATTLEFIELD_ROLE_BY_CHAMPION } from './BattlefieldMatch.ts';
 import { BATTLEFIELD_NAVIGATION, battlefieldLaneRoute } from './navigation.ts';
 import Phaser from 'phaser';
 import type { SkillSlot } from './skillConfig.ts';
@@ -159,11 +159,11 @@ export class ArenaScene extends Phaser.Scene {
     this.renderGuide();
     for(const owner of this.champions)for(const event of owner.events.splice(0)) {
       const enemyOwner=this.match?.opponents.includes(owner)??false;
-      if(enemyOwner&&this.laneMatch){
-        const ownerTarget=this.laneMatch.championTargets.find(t=>t.id===owner.profile.id);
+      if(enemyOwner&&this.match){
+        const ownerTarget=this.match.championTargets.find(t=>t.id===owner.profile.id);
         const sourceEvent=event.entityId===owner.profile.id||event.kind==='cast'||event.kind==='slash'||event.kind==='ultimate'||event.kind==='levelUp'||event.kind==='heal';
-        if(sourceEvent&&(!ownerTarget||!this.laneMatch.canSee('blue',ownerTarget)))continue;
-        if(!sourceEvent&&!this.laneMatch.pointVisible('blue',event.point))continue;
+        if(sourceEvent&&(!ownerTarget||!this.match.canSee('blue',ownerTarget)))continue;
+        if(!sourceEvent&&!this.match.pointVisible('blue',event.point))continue;
       }
       if(event.entityId&&(event.kind==='cast'||event.kind==='damage'))this.poses.set(event.entityId,{kind:event.kind==='cast'?'cast':'hurt',until:this.combat.elapsed+(this.visuals?.clipDuration(actorVisual(this.champions.find(c=>c.profile.id===event.entityId)?.visualId??event.entityId),event.kind==='cast'?'cast':'hurt')??.3)});
       const custom=event.visual?this.visuals?.effect(event.visual,event.point):false;
@@ -206,22 +206,22 @@ export class ArenaScene extends Phaser.Scene {
     }
     for (const member of this.champions) {
       const enemyMember=this.match?.opponents.includes(member)??false;
-      const visiblePoint=(p:Point)=>!enemyMember||!this.laneMatch||this.laneMatch.pointVisible('blue',p);
+      const visiblePoint=(p:Point)=>!enemyMember||!this.match||this.match.pointVisible('blue',p);
       const a=member.abilities;
       for(const m of a.missiles){if(!visiblePoint(m.point))continue;if(this.visuals?.draw(m,`projectile.${member.profile.kit}.${m.kind}`,m.point,'walk',Math.atan2(m.direction.y,m.direction.x)))continue;g.fillStyle(member.profile.color);g.fillCircle(m.point.x,m.point.y,m.kind==='arrow'?10:6);}
       if(a.scout&&visiblePoint(a.scout)&&!this.visuals?.draw(a.scout,'zone.scout',a.scout)){g.lineStyle(2,0x86c9ec,.6);g.strokeCircle(a.scout.x,a.scout.y,SKILLS.frost.scout.radius);}
-      const petVisible=!!a.pet&&(!enemyMember||!this.laneMatch||this.laneMatch.canSeePet('blue',member));
+      const petVisible=!!a.pet&&(!enemyMember||!this.match||this.match.canSeePet('blue',member));
       if(a.pet&&petVisible){const p=a.pet;if(!this.visuals?.draw(p,`pet.${member.profile.kit}`,p)){g.fillStyle(0xa47258);g.fillRoundedRect(p.x-22,p.y-24,44,46,12);g.fillCircle(p.x-16,p.y-24,10);g.fillCircle(p.x+16,p.y-24,10);g.fillStyle(0xffd491);g.fillCircle(p.x-8,p.y-10,3);g.fillCircle(p.x+8,p.y-10,3);}g.fillStyle(0x89cca0);g.fillRect(p.x-22,p.y-40,44*Math.max(0,Math.min(1,p.hp/p.maxHp)),4);}
-      const memberTarget=enemyMember&&this.laneMatch?this.laneMatch.championTargets.find(t=>t.id===member.profile.id):undefined;
-      const ownerVisible=!enemyMember||!this.laneMatch||!!memberTarget&&this.laneMatch.canSee('blue',memberTarget);
+      const memberTarget=enemyMember&&this.match?this.match.championTargets.find(t=>t.id===member.profile.id):undefined;
+      const ownerVisible=!enemyMember||!this.match||!!memberTarget&&this.match.canSee('blue',memberTarget);
       if(a.aura&&ownerVisible&&!this.visuals?.draw(a,`aura.${member.profile.kit}`,member.hero)){g.lineStyle(2,0x88b99d,.6);g.strokeCircle(member.hero.x,member.hero.y,SKILLS.curse.aura.range);}
 
       for (const p of member.projectiles) { if(!visiblePoint(p))continue;if(this.visuals?.draw(p,`projectile.${member.visualId}.basic`,p,'walk',Math.atan2(p.target.y-p.y,p.target.x-p.x)))continue;g.fillStyle(member.profile.color); g.fillCircle(p.x,p.y,5); }
     }
     for (const c of this.champions) {
     const enemy=this.match?.opponents.includes(c)??false;
-    const target=enemy&&this.laneMatch?this.laneMatch.championTargets.find(t=>t.id===c.profile.id):undefined;
-    if(enemy&&target&&!this.laneMatch!.canSee('blue',target))continue;
+    const target=enemy&&this.match?this.match.championTargets.find(t=>t.id===c.profile.id):undefined;
+    if(enemy&&target&&!this.match!.canSee('blue',target))continue;
     const h=c.hero,last=this.lastPositions.get(c.profile.id),pose=this.poses.get(c.profile.id);
     const activePose=pose&&pose.until>c.elapsed?pose.kind:null;
     const motion=motionFor({alive:c.alive,moving:!!last&&distance(h,last)>.01,attacking:!!c.pending,casting:activePose==='cast',hurt:activePose==='hurt',recalling:c.command.kind==='recall'});
@@ -257,6 +257,7 @@ export class ArenaScene extends Phaser.Scene {
   private renderBattlefield(){
     const g=this.actors,match=this.battlefield!;
     for(const u of match.units){
+      if(u.team==='red'&&!match.canSee('blue',u))continue;
       const color=u.team==='blue'?0x79b9cc:0xd98b78;
       const previous=this.lastPositions.get(u.id);
       const stats=u.kind==='minion'
@@ -336,8 +337,8 @@ export class ArenaScene extends Phaser.Scene {
     for(const shot of match.towerShots.values()){g.lineStyle(3,0xef9273,.8);g.lineBetween(shot.tower.x,shot.tower.y,shot.target.point.x,shot.target.point.y);g.strokeCircle(shot.target.point.x,shot.target.point.y,25);}
   }
   private renderFog(){
-    const g=this.fog;g.clear();const match=this.laneMatch;if(!match)return;
-    const cell=LANE.vision.cell;
+    const g=this.fog;g.clear();const match=this.match;if(!match)return;
+    const cell=this.battlefield?BATTLEFIELD.vision.cell:LANE.vision.cell;
     for(let y=0;y<RULES.world.height;y+=cell)for(let x=0;x<RULES.world.width;x+=cell){
       const state=match.terrain('blue',{x:Math.min(RULES.world.width-.001,x+cell/2),y:Math.min(RULES.world.height-.001,y+cell/2)});
       if(state==='visible')continue;
@@ -378,6 +379,10 @@ export class ArenaScene extends Phaser.Scene {
         this.mapLayer.add(this.add.text(mid.x,mid.y-42,label,{fontFamily:'Georgia,serif',fontSize:'18px',color:'#d4cf9c',stroke:'#21382f',strokeThickness:3}).setOrigin(.5).setAlpha(.68));
       }
 
+      for(const bush of BATTLEFIELD_BUSHES){
+        g.fillStyle(0x173c29,.9);g.fillRoundedRect(bush.x,bush.y,bush.width,bush.height,24);
+        g.lineStyle(2,0x436d48,.62);g.strokeRoundedRect(bush.x,bush.y,bush.width,bush.height,24);
+      }
       for(const id of ['blue-jungle-top','blue-jungle-bottom','red-jungle-top','red-jungle-bottom'] as const){
         const p=BATTLEFIELD_NAVIGATION.node(id).point;
         g.fillStyle(id.startsWith('blue')?0x355f5c:0x654b49,.18);g.fillCircle(p.x,p.y,64);
