@@ -23,6 +23,7 @@ import {
 } from './navigation.ts';
 import type { LaneId, NavigationTeam } from './navigation.ts';
 import { BattlefieldAI } from './BattlefieldAI.ts';
+import { JungleState } from './Jungle.ts';
 
 export type BattlefieldTeam=NavigationTeam;
 export type BattlefieldMinionRole='melee'|'ranged'|'siege';
@@ -114,6 +115,7 @@ export class BattlefieldMatch extends Squad {
   nextWave=BATTLEFIELD.firstWave;
   result:BattlefieldResult|null=null;
   ai:BattlefieldAI[]=[];
+  readonly jungle=new JungleState();
   readonly vision=new TeamVision(RULES.world.width,RULES.world.height,BATTLEFIELD_BUSHES,BATTLEFIELD.vision.cell);
   private exposedUntil=new Map<string,number>();
   private petExposedUntil=new Map<string,number>();
@@ -497,6 +499,7 @@ export class BattlefieldMatch extends Squad {
     for(const economy of Object.values(this.economy))economy.advance(this.elapsed,this.elapsed+dt);
     const previous=this.elapsed;
     this.elapsed+=dt;
+    this.jungle.step(this.elapsed);
     while(this.nextWave<=this.elapsed+1e-8){
       if(this.nextWave>=previous-1e-8)this.spawnWave();
       this.nextWave+=BATTLEFIELD.waveInterval;
