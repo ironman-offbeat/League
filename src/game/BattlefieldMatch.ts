@@ -476,8 +476,10 @@ export class BattlefieldMatch extends Squad {
 
     const target=camp.aggro?this.actors.find(actor=>actor.profile.id===camp.aggro):undefined;
     if(!target){
-      if(camp.state==='engaged')camp.beginReturn();
-      if(camp.state==='returning')camp.stepReturn(dt);
+      if(camp.state==='engaged'){
+        camp.beginReturn();
+        camp.stepReturn(dt);
+      }
       return;
     }
 
