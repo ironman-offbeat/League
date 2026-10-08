@@ -214,7 +214,6 @@ test('jungle monster returns home, becomes protected and fully resets after leas
 
   attacker.hero.x=camp.x+90;attacker.hero.y=camp.y;attacker.anchor={x:attacker.hero.x,y:attacker.hero.y};
   attacker.hurt(camp,500,'test',false,'physical','basic');
-  const damaged=camp.hp;
   step(match,.5);
   assert.ok(camp.hp<camp.maxHp);
   assert.ok(camp.x!==camp.point.x||camp.y!==camp.point.y);
@@ -227,8 +226,9 @@ test('jungle monster returns home, becomes protected and fully resets after leas
   assert.equal(camp.state,'returning');
   assert.equal(camp.protected,true);
   assert.equal(camp.aggro,null);
+  const protectedHp=camp.hp;
   assert.equal(damageTarget(camp,1000,'physical','basic'),0);
-  assert.equal(camp.hp,damaged);
+  assert.equal(camp.hp,protectedHp);
 
   step(match,3);
   assert.equal(camp.state,'idle');
