@@ -159,3 +159,99 @@ test('existing battlefield AI ignores neutral monsters until jungle-AI integrati
   assert.ok(redAmumu.command.kind!=='attack'||redAmumu.command.targetId!==camp.id);
   assert.equal(camp.hp,hp);
 });
+
+
+test('jungle monster retaliates against the champion that damaged it',()=>{
+  const match=new BattlefieldMatch();
+  step(match,JUNGLE.firstSpawn);
+  const camp=match.jungle.camp('blue-red');
+  const amumu=match.members.find(actor=>actor.visualId==='amumu')!;
+
+  amumu.hero.x=camp.x-30;amumu.hero.y=camp.y;amumu.anchor={x:amumu.hero.x,y:amumu.hero.y};
+  const hp=amumu.hero.hp;
+  amumu.hurt(camp,100,'test',false,'physical','basic');
+
+  assert.equal(camp.aggro,amumu.profile.id);
+  step(match,RULES.step);
+  assert.equal(camp.state,'engaged');
+  assert.ok(amumu.hero.hp<hp);
+  assert.ok(camp.attackCooldown>0);
+});
+
+test('jungle monster chases an aggro target while both remain inside the leash',()=>{
+  const match=new BattlefieldMatch();
+  step(match,JUNGLE.firstSpawn);
+  const camp=match.jungle.camp('blue-blue');
+  const attacker=match.members[0];
+
+  attacker.hero.x=camp.x+150;attacker.hero.y=camp.y;attacker.anchor={x:attacker.hero.x,y:attacker.hero.y};
+  attacker.hurt(camp,80,'test',false,'physical','basic');
+  const before=camp.x;
+
+  step(match,.5);
+  assert.equal(camp.state,'engaged');
+  assert.ok(camp.x>before);
+  assert.ok(Math.hypot(camp.x-camp.point.x,camp.y-camp.point.y)<JUNGLE.monster.leash);
+});
+
+test('jungle monster aggro switches to the latest champion that damages it',()=>{
+  const match=new BattlefieldMatch();
+  step(match,JUNGLE.firstSpawn);
+  const camp=match.jungle.camp('red-red');
+  const first=match.members[0],second=match.members[1];
+
+  first.hurt(camp,50,'first',false,'physical','basic');
+  assert.equal(camp.aggro,first.profile.id);
+  second.hurt(camp,50,'second',false,'physical','basic');
+  assert.equal(camp.aggro,second.profile.id);
+});
+
+test('jungle monster returns home, becomes protected and fully resets after leash break',()=>{
+  const match=new BattlefieldMatch();
+  step(match,JUNGLE.firstSpawn);
+  const camp=match.jungle.camp('red-blue');
+  const attacker=match.members[0];
+
+  attacker.hero.x=camp.x+90;attacker.hero.y=camp.y;attacker.anchor={x:attacker.hero.x,y:attacker.hero.y};
+  attacker.hurt(camp,500,'test',false,'physical','basic');
+  const damaged=camp.hp;
+  step(match,.5);
+  assert.ok(camp.hp<camp.maxHp);
+  assert.ok(camp.x!==camp.point.x||camp.y!==camp.point.y);
+
+  attacker.hero.x=camp.point.x+JUNGLE.monster.leash+80;
+  attacker.hero.y=camp.point.y;
+  attacker.anchor={x:attacker.hero.x,y:attacker.hero.y};
+  step(match,RULES.step);
+
+  assert.equal(camp.state,'returning');
+  assert.equal(camp.protected,true);
+  assert.equal(camp.aggro,null);
+  assert.equal(damageTarget(camp,1000,'physical','basic'),0);
+  assert.equal(camp.hp,damaged);
+
+  step(match,3);
+  assert.equal(camp.state,'idle');
+  assert.equal(camp.protected,false);
+  assert.equal(camp.aggro,null);
+  assert.equal(camp.hp,camp.maxHp);
+  assert.deepEqual({x:camp.x,y:camp.y},camp.point);
+});
+
+test('jungle monster resets when its aggro target dies',()=>{
+  const match=new BattlefieldMatch();
+  step(match,JUNGLE.firstSpawn);
+  const camp=match.jungle.camp('blue-red');
+  const attacker=match.members[0];
+
+  attacker.hero.x=camp.x-60;attacker.hero.y=camp.y;attacker.anchor={x:attacker.hero.x,y:attacker.hero.y};
+  attacker.hurt(camp,120,'test',false,'physical','basic');
+  attacker.receiveDamage(1e9,'physical',false);
+  step(match,RULES.step);
+
+  assert.equal(camp.state,'returning');
+  step(match,2);
+  assert.equal(camp.state,'idle');
+  assert.equal(camp.hp,camp.maxHp);
+  assert.equal(camp.aggro,null);
+});
