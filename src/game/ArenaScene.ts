@@ -102,7 +102,7 @@ export class ArenaScene extends Phaser.Scene {
   }
   startMode(lane:boolean) {
     this.visuals?.clear();this.lastPositions.clear();this.poses.clear();
-    this.squad=lane?new BattlefieldMatch():new Squad(true);
+    this.squad=lane?new BattlefieldMatch({ai:true}):new Squad(true);
     this.accumulator=0;this.cancelGesture();
     this.labels.forEach(label=>label.destroy());
     this.labels=this.combat.enemies.map(()=>this.add.text(0,0,'',{fontFamily:'Malgun Gothic, sans-serif',fontSize:'11px',color:'#e4ddbd',backgroundColor:'#18241dc0',padding:{x:5,y:3}}).setOrigin(.5).setDepth(7));
