@@ -6,7 +6,7 @@ export type Target = Point & Status & {
   // Live champions own their health, status clocks and respawn lifecycle.
   receiveDamage?:(raw:number,type:DamageType,show:boolean)=>number;
   onDeath?:(target:Target)=>void;
-  kind?: 'champion' | 'minion' | 'building';
+  kind?: 'champion' | 'minion' | 'building' | 'monster';
   protected?: boolean;
   damageScale?: number;
   magicResist:number; revealed:number; alert:number; aggro:string|null;
