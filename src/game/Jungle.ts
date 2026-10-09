@@ -55,6 +55,7 @@ export class JungleCamp implements Target {
   nextSpawnAt:number|null;
   lastDefeatedAt:number|null=null;
   lastDamager:string|null=null;
+  onDeath?:(target:Target)=>void;
   private time=0;
 
   constructor(definition:JungleCampDefinition){
