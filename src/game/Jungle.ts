@@ -18,7 +18,7 @@ export type JungleCampDefinition={
 export const JUNGLE={
   firstSpawn:15,
   respawn:45,
-  monster:{hp:1400,armor:20,magicResist:20,attack:72,interval:1.25,range:48,speed:86,leash:260,resetSpeed:130,homeRadius:6},
+  monster:{hp:1000,armor:20,magicResist:20,attack:72,interval:1.25,range:48,speed:86,leash:260,resetSpeed:130,homeRadius:6},
   reward:{gold:60,xp:120},
   camps:[
     {id:'blue-blue',side:'blue',buff:'blue',nodeId:'blue-jungle-top',firstSpawn:15,respawn:45},

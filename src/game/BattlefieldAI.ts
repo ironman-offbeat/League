@@ -30,7 +30,7 @@ export const BATTLEFIELD_AI_RULES={
   start:10,
   patrolReach:65,
   jungleFinishCampHP:.36,
-  jungleFinishMinimumHP:.18,
+  jungleFinishMinimumHP:.1,
 } as const;
 
 export type BattlefieldAIState='waiting'|'advance'|'fight'|'patrol'|'camp-approach'|'camp-fight'|'retreat'|'recall'|'recover'|'dead';
