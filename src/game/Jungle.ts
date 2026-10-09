@@ -79,6 +79,7 @@ export class JungleCamp implements Target {
     this.x=this.point.x;
     this.y=this.point.y;
     this.hp=this.maxHp;
+    this.lastDamager=null;
     Object.assign(this,freshStatus(),{revealed:0,alert:0,aggro:null,attackCooldown:0});
   }
 
