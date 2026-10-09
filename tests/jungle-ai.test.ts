@@ -125,3 +125,19 @@ test('jungle AI can finish a monster and receive its buff, XP and team gold thro
   assert.ok(actor.progression.totalXp>=xp+JUNGLE.reward.xp/4);
   assert.ok(actor.buffs.red>0);
 });
+
+test('full-health home jungle camp is farmable by autonomous Amumu before its first respawn',()=>{
+  const match=new BattlefieldMatch({ai:true});
+  openCamps(match);
+  // Disable unrelated lane brains to isolate the jungle battle without modifying
+  // monster health, attack stats, the champion kit, or its potion.
+  const brain=match.ai[3];
+  match.ai=[brain];
+  const camp=match.jungle.camp('red-red');
+  assert.equal(camp.hp,JUNGLE.monster.hp);
+  for(let i=0;i<Math.round(65/RULES.step)&&camp.lastDefeatedAt===null&&match.result===null;i++){
+    match.step(RULES.step);
+  }
+  assert.ok(camp.lastDefeatedAt!==null,'Amumu failed to clear a full-health own camp');
+  assert.ok(match.economy.red.earned>=JUNGLE.reward.gold);
+});
