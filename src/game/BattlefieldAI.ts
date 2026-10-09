@@ -15,6 +15,7 @@ import type {
 } from './BattlefieldMatch.ts';
 import { BATTLEFIELD_NAVIGATION } from './navigation.ts';
 import type { LaneId } from './navigation.ts';
+import { chooseJungleCamp, JUNGLE_AI_RULES } from './JunglePlanning.ts';
 
 export const BATTLEFIELD_AI_RULES={
   interval:.3,
@@ -28,9 +29,11 @@ export const BATTLEFIELD_AI_RULES={
   towerMargin:55,
   start:10,
   patrolReach:65,
+  jungleFinishCampHP:.36,
+  jungleFinishMinimumHP:.1,
 } as const;
 
-export type BattlefieldAIState='waiting'|'advance'|'fight'|'patrol'|'retreat'|'recall'|'recover'|'dead';
+export type BattlefieldAIState='waiting'|'advance'|'fight'|'patrol'|'camp-approach'|'camp-fight'|'retreat'|'recall'|'recover'|'dead';
 
 const LANE_ROLES:readonly LaneId[]=['top','mid','bottom'];
 const PATROL:Record<BattlefieldTeam,readonly string[]>={
@@ -43,6 +46,7 @@ export class BattlefieldAI {
   private remaining=0;
   private recovering=false;
   private patrolIndex=0;
+  private selectedCampId:string|null=null;
   readonly actor:Combat;
   readonly role:BattlefieldRole;
   private readonly match:BattlefieldMatch;
@@ -78,7 +82,15 @@ export class BattlefieldAI {
     const mana=c.maxMana?c.hero.mana/c.maxMana:1;
 
     if(hp<BATTLEFIELD_AI_RULES.potionHP)c.usePotion();
-    if(hp<BATTLEFIELD_AI_RULES.retreatHP||(c.maxMana>0&&mana<.12))this.recovering=true;
+    const finishableCamp=this.role==='jungle'&&!threats.length&&m.jungle.camps.some(camp=>
+      camp.alive&&camp.side===team&&camp.aggro===c.profile.id&&
+      camp.hp/camp.maxHp<=BATTLEFIELD_AI_RULES.jungleFinishCampHP&&
+      hp>BATTLEFIELD_AI_RULES.jungleFinishMinimumHP&&
+      distance(c.hero,camp)<=BATTLEFIELD_AI_RULES.engage
+    );
+    // Avoid abandoning an almost-finished camp at the ordinary lane retreat
+    // threshold, but never override critical-health or nearby PvP danger.
+    if((hp<BATTLEFIELD_AI_RULES.retreatHP&&!finishableCamp)||(c.maxMana>0&&mana<.12))this.recovering=true;
 
     if(this.recovering){
       const fountain=battlefieldFountain(team);
@@ -181,6 +193,24 @@ export class BattlefieldAI {
 
   private stepJungle(team:BattlefieldTeam){
     const c=this.actor;
+    const plan=chooseJungleCamp(c.hero,team,this.match.jungle.camps,this.selectedCampId);
+    if(plan){
+      const camp=plan.camp;
+      this.selectedCampId=camp.id;
+      // Enter combat only after actually seeing the monster and arriving
+      // close to its spawn. Attack() then runs the existing Combat target,
+      // skill, aggro, loot and buff systems without a jungle-specific hit path.
+      if(c.canSee(camp)&&distance(c.hero,camp)<=JUNGLE_AI_RULES.attackInitiateRange){
+        this.state='camp-fight';
+        this.attack(camp);
+        return;
+      }
+      const nextNodeId=plan.pathIds.length>1?plan.pathIds[1]:camp.definition.nodeId;
+      this.state='camp-approach';
+      this.move(BATTLEFIELD_NAVIGATION.node(nextNodeId).point);
+      return;
+    }
+    this.selectedCampId=null;
     const route=PATROL[team];
     let targetId=route[this.patrolIndex%route.length];
     let target=BATTLEFIELD_NAVIGATION.node(targetId);

@@ -69,7 +69,7 @@ test('low-health battlefield AI uses the shared retreat and recall path toward i
   assert.equal(actor.command.kind,'recall');
 });
 
-test('jungle role patrols navigation graph instead of joining a lane wave by default',()=>{
+test('jungle role patrols navigation graph when no camp has spawned',()=>{
   const match=new BattlefieldMatch({ai:true});
   match.elapsed=20;
   const brain=match.ai[3],actor=brain.actor;

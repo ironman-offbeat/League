@@ -5,6 +5,7 @@ import { PROGRESSION } from '../src/game/progression.ts';
 import { damageTarget } from '../src/game/targets.ts';
 import { BattlefieldMatch } from '../src/game/BattlefieldMatch.ts';
 import { JUNGLE, JungleState } from '../src/game/Jungle.ts';
+import { BATTLEFIELD_AI_RULES } from '../src/game/BattlefieldAI.ts';
 import { BATTLEFIELD_NAVIGATION } from '../src/game/navigation.ts';
 
 const step=(match:BattlefieldMatch,seconds:number)=>{
@@ -147,18 +148,23 @@ test('neutral jungle monsters obey battlefield team vision instead of global vis
   assert.equal(match.canSee('red',blueCamp),false);
 });
 
-test('existing battlefield AI ignores neutral monsters until jungle-AI integration arrives',()=>{
+test('jungle-role battlefield AI now hunts its visible home-side neutral camp',()=>{
   const match=new BattlefieldMatch({ai:true});
-  step(match,JUNGLE.firstSpawn);
-  const redAmumu=match.opponents.find(actor=>actor.visualId==='amumu')!;
+  match.elapsed=JUNGLE.firstSpawn;
+  match.jungle.step(match.elapsed);
+  const brain=match.ai.find(ai=>ai.role==='jungle')!;
+  const amumu=brain.actor;
   const camp=match.jungle.camp('red-red');
-  redAmumu.hero.x=camp.x;redAmumu.hero.y=camp.y;redAmumu.anchor={x:camp.x,y:camp.y};
+  amumu.hero.x=camp.x;amumu.hero.y=camp.y;amumu.anchor={x:camp.x,y:camp.y};
   match.refreshVision();
 
+  brain.step(BATTLEFIELD_AI_RULES.interval);
+  assert.equal(brain.state,'camp-fight');
+  assert.equal(amumu.command.kind,'attack');
+  if(amumu.command.kind==='attack')assert.equal(amumu.command.targetId,camp.id);
   const hp=camp.hp;
   step(match,1);
-  assert.ok(redAmumu.command.kind!=='attack'||redAmumu.command.targetId!==camp.id);
-  assert.equal(camp.hp,hp);
+  assert.ok(camp.hp<hp);
 });
 
 
