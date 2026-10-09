@@ -231,6 +231,8 @@ export class ArenaScene extends Phaser.Scene {
     if(enemy){g.lineStyle(3,0xed806e,.9);g.strokeEllipse(h.x,h.y+7,64,48);}
     if(this.combat.command.kind==='attack'&&this.combat.command.targetId===c.profile.id){g.lineStyle(2,0xffdf9c);g.strokeCircle(h.x,h.y,37);}
     if(h.shield>0){g.lineStyle(3,0x88cbed,.8);g.strokeCircle(h.x,h.y,34);}
+    if(c.buffs.red>0){g.lineStyle(3,0xe17c59,.85);g.strokeCircle(h.x,h.y,29);}
+    if(c.buffs.blue>0){g.lineStyle(3,0x6d9fe6,.85);g.strokeCircle(h.x,h.y,35);}
     g.fillStyle(0x0b1915,.6);g.fillEllipse(h.x+4,h.y+24,63,26);
     if(c.ultimateRemaining>0){g.fillStyle(0xdaa549,.09);g.fillCircle(h.x,h.y,RULES.ultimate.range);g.lineStyle(1,0xdaba64,.45);g.strokeCircle(h.x,h.y,49);}
     if(c===this.combat){g.lineStyle(2,0x81d8b0,.85);g.strokeEllipse(h.x,h.y+7,64,48);}

@@ -77,6 +77,8 @@ export class JungleCamp implements Target {
   }
 
   restoreAtHome(){
+    // A full leash reset starts a fresh combat generation, invalidating stale projectiles and burns.
+    this.generation++;
     this.x=this.point.x;
     this.y=this.point.y;
     this.hp=this.maxHp;
