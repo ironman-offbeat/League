@@ -135,9 +135,32 @@ test('full-health home jungle camp is farmable by autonomous Amumu before its fi
   match.ai=[brain];
   const camp=match.jungle.camp('red-red');
   assert.equal(camp.hp,JUNGLE.monster.hp);
+  const trace:{time:number;campHP:number;heroHP:number;state:string;command:string;aggro:string|null}[]=[];
   for(let i=0;i<Math.round(65/RULES.step)&&camp.lastDefeatedAt===null&&match.result===null;i++){
     match.step(RULES.step);
+    if(i%Math.round(5/RULES.step)===0)trace.push({
+      time:Math.round(match.elapsed),campHP:Math.round(camp.hp),
+      heroHP:Math.round(brain.actor.hero.hp),state:brain.state,
+      command:brain.actor.command.kind,aggro:camp.aggro,
+    });
   }
-  assert.ok(camp.lastDefeatedAt!==null,'Amumu failed to clear a full-health own camp');
+  assert.ok(camp.lastDefeatedAt!==null,`Amumu failed to clear a full-health own camp: ${JSON.stringify(trace)}`);
   assert.ok(match.economy.red.earned>=JUNGLE.reward.gold);
+});
+
+test('jungle AI commits to a nearly cleared camp but honors emergency low-health retreat',()=>{
+  const match=new BattlefieldMatch({ai:true});
+  openCamps(match);
+  const brain=match.ai[3],actor=brain.actor;
+  const camp=match.jungle.camp('red-red');
+  camp.hp=camp.maxHp*.1;
+  camp.aggro=actor.profile.id;
+  actor.hero.hp=actor.hero.maxHp*.28;
+  match.refreshVision();
+  brain.step(BATTLEFIELD_AI_RULES.interval);
+  assert.equal(brain.state,'camp-fight');
+
+  actor.hero.hp=actor.hero.maxHp*.1;
+  brain.step(BATTLEFIELD_AI_RULES.interval);
+  assert.ok(['recall','retreat','recover'].includes(brain.state));
 });

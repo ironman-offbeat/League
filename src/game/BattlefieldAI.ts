@@ -29,6 +29,8 @@ export const BATTLEFIELD_AI_RULES={
   towerMargin:55,
   start:10,
   patrolReach:65,
+  jungleFinishCampHP:.36,
+  jungleFinishMinimumHP:.18,
 } as const;
 
 export type BattlefieldAIState='waiting'|'advance'|'fight'|'patrol'|'camp-approach'|'camp-fight'|'retreat'|'recall'|'recover'|'dead';
@@ -80,7 +82,15 @@ export class BattlefieldAI {
     const mana=c.maxMana?c.hero.mana/c.maxMana:1;
 
     if(hp<BATTLEFIELD_AI_RULES.potionHP)c.usePotion();
-    if(hp<BATTLEFIELD_AI_RULES.retreatHP||(c.maxMana>0&&mana<.12))this.recovering=true;
+    const finishableCamp=this.role==='jungle'&&!threats.length&&m.jungle.camps.some(camp=>
+      camp.alive&&camp.side===team&&camp.aggro===c.profile.id&&
+      camp.hp/camp.maxHp<=BATTLEFIELD_AI_RULES.jungleFinishCampHP&&
+      hp>BATTLEFIELD_AI_RULES.jungleFinishMinimumHP&&
+      distance(c.hero,camp)<=BATTLEFIELD_AI_RULES.engage
+    );
+    // Avoid abandoning an almost-finished camp at the ordinary lane retreat
+    // threshold, but never override critical-health or nearby PvP danger.
+    if((hp<BATTLEFIELD_AI_RULES.retreatHP&&!finishableCamp)||(c.maxMana>0&&mana<.12))this.recovering=true;
 
     if(this.recovering){
       const fountain=battlefieldFountain(team);
