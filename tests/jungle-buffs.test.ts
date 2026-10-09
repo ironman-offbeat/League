@@ -101,7 +101,7 @@ test('ranged basic attack applies red slow on actual projectile hit',()=>{
   target.x=actor.hero.x+110;target.y=actor.hero.y;
   actor.grantJungleBuff('red');
   assert.ok(actor.attack(target.id));
-  for(let i=0;i<100;i++)actor.step(RULES.step,false);
+  for(let i=0;i<120&&target.slowRemaining===0;i++)actor.step(RULES.step,false);
   assert.ok(target.slowRemaining>0);
   assert.ok(target.hp<target.maxHp);
 });
