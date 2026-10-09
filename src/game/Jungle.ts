@@ -19,6 +19,7 @@ export const JUNGLE={
   firstSpawn:15,
   respawn:45,
   monster:{hp:1400,armor:20,magicResist:20,attack:72,interval:1.25,range:48,speed:86,leash:260,resetSpeed:130,homeRadius:6},
+  reward:{gold:60,xp:120},
   camps:[
     {id:'blue-blue',side:'blue',buff:'blue',nodeId:'blue-jungle-top',firstSpawn:15,respawn:45},
     {id:'blue-red',side:'blue',buff:'red',nodeId:'blue-jungle-bottom',firstSpawn:15,respawn:45},
@@ -53,6 +54,7 @@ export class JungleCamp implements Target {
   marked=0;
   nextSpawnAt:number|null;
   lastDefeatedAt:number|null=null;
+  lastDamager:string|null=null;
   private time=0;
 
   constructor(definition:JungleCampDefinition){
@@ -97,6 +99,7 @@ export class JungleCamp implements Target {
     }
     this.alive=true;
     this.hp=this.maxHp;
+    this.lastDamager=null;
     this.x=this.point.x;this.y=this.point.y;
     Object.assign(this,freshStatus(),{revealed:0,alert:0,aggro:null,attackCooldown:0,respawn:0});
     if(this.lastDefeatedAt!==null)this.generation++;
@@ -106,6 +109,7 @@ export class JungleCamp implements Target {
 
   receiveDamage(raw:number,type:DamageType='physical'){
     if(!this.alive)return 0;
+    if(raw>0&&this.aggro)this.lastDamager=this.aggro;
     const damage=mitigate(raw,type==='physical'?this.armor:this.magicResist);
     const lost=Math.min(this.hp,damage);
     this.hp-=lost;
@@ -123,6 +127,7 @@ export class JungleCamp implements Target {
     this.nextSpawnAt=time+this.definition.respawn;
     this.respawn=this.definition.respawn;
     Object.assign(this,freshStatus(),{revealed:0,alert:0,aggro:null,attackCooldown:0});
+    this.onDeath?.(this);
     return true;
   }
 
