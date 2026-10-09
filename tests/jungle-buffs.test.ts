@@ -57,6 +57,7 @@ test('same buff refreshes duration without stacking, and expires with simulation
 
 test('blue grants bonus mana regeneration and speeds skill but not basic-attack cooldown',()=>{
   const actor=champion('annie');
+  actor.hero.x=actor.profile.spawn.x+200;
   actor.hero.mana=0;
   actor.cooldown.attack=10;
   actor.cooldown.dash=10;
