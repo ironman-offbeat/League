@@ -51,7 +51,7 @@ scene.onFrame=s=>{
   }
   const fury=c.profile.kit==='fury';
   el('champion-name').textContent=c.profile.name;
-  el('champion-status').textContent=`Lv. ${c.progression.level}${c.profile.kit==='flame'?` · 불꽃 ${c.abilities.stacks}/3`:''}`;
+  el('champion-status').textContent=`Lv. ${c.progression.level}${c.profile.kit==='flame'?` · 불꽃 ${c.abilities.stacks}/3`:''}${c.buffs.red>0?` · 레드 ${Math.ceil(c.buffs.red)}초`:''}${c.buffs.blue>0?` · 블루 ${Math.ceil(c.buffs.blue)}초`:''}`;
   el('xp-track').hidden=!match;
   el('xp-bar').style.width=`${c.progression.capped?100:c.progression.xp/c.progression.required*100}%`;
   el('xp-text').textContent=c.progression.capped?'최대 레벨':`XP ${Math.floor(c.progression.xp)} / ${c.progression.required}`;

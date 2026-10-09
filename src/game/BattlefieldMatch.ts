@@ -198,6 +198,7 @@ export class BattlefieldMatch extends Squad {
     if(!killer)return;
     const team=this.teamOf(killer);
     this.economy[team].add(JUNGLE.reward.gold);
+    killer.grantJungleBuff(camp.buff);
     const eligible=this.teamMembers(team).filter(actor=>
       actor.alive&&!actor.progression.capped&&distance(actor.hero,camp)<=PROGRESSION.rewardRange
     );

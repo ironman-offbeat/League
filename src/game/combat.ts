@@ -13,6 +13,8 @@ import type { Champion } from './champions.ts';
 import { RULES, distance, clampPoint } from './config.ts';
 import type { Point } from './config.ts';
 import { Progression, PROGRESSION } from './progression.ts';
+import { JungleBuffs } from './JungleBuffs.ts';
+import type { JungleBuff } from './Jungle.ts';
 
 export type Command = { kind: 'idle' } | { kind: 'move'; point: Point } | { kind: 'attack'; targetId: string; generation:number; point:Point } | { kind:'attackMove';point:Point } | { kind: 'recall'; remaining: number };
 export type Dummy = Target;
@@ -31,11 +33,13 @@ export class Combat {
   profile: Champion;
   progression=new Progression();
   equipment=new Equipment();
+  readonly buffs=new JungleBuffs();
   get ranks(){return skillRanks(this.profile.kit,this.progression.level,this.progression.enabled);}
   get furySkills(){return rankedFury(this.ranks,this.stats.attack);}
   get abilityPower(){return ['flame','curse'].includes(this.profile.kit)?EQUIPMENT.magical[this.equipment.weapon]:0;}
   get weaponAttack(){return ['fury','frost'].includes(this.profile.kit)?EQUIPMENT.physical[this.equipment.weapon]:0;}
   initializeEquipment(){this.equipment.initialize();this.hero.maxHp+=EQUIPMENT.health[1];this.hero.hp+=EQUIPMENT.health[1];}
+  grantJungleBuff(kind:JungleBuff){if(this.alive)this.buffs.grant(kind);}
   usePotion(){
     const e=this.equipment;if(!this.canAct||!e.potion||e.active)return false;
     const p=EQUIPMENT.potions[e.potion];
@@ -87,7 +91,7 @@ export class Combat {
       if(this.ultimateRemaining>0)this.hero.maxHp-=this.ultimateHealth;
       this.ultimateHealth=0;this.equipment.active=null;
       this.ultimateRemaining=0;this.hero.shield=0;this.hero.shieldRemaining=0;this.hero.fury=0;
-      this.abilities.reset();Object.assign(this.hero,freshStatus());
+      this.abilities.reset();this.buffs.clear();Object.assign(this.hero,freshStatus());
       this.onDeath?.();
     }else this.abilities.onDamage();
     return lost;
@@ -180,8 +184,11 @@ export class Combat {
   cancelRecall() { if (this.command.kind === 'recall') this.command = { kind: 'idle' }; }
   step(dt: number, updateEnemies = true) {
     this.elapsed += dt;
-    for (const key of Object.keys(this.cooldown) as (keyof typeof this.cooldown)[]) this.cooldown[key] = Math.max(0, this.cooldown[key] - dt);
+    const skillSpeed=this.buffs.skillCooldownSpeed;
+    for (const key of Object.keys(this.cooldown) as (keyof typeof this.cooldown)[])
+      this.cooldown[key] = Math.max(0,this.cooldown[key]-dt*(key==='attack'?1:skillSpeed));
     if (updateEnemies) Combat.stepEnemies(this.enemies, dt);
+    this.buffs.step(dt,(target,amount)=>this.hurt(target,amount,'레드 버프',false,'magic','skill',false));
     this.stepProjectiles(dt);
     tickStatus(this.hero,dt);
     this.hero.shieldRemaining=Math.max(0,this.hero.shieldRemaining-dt);
@@ -217,7 +224,7 @@ export class Combat {
   private stepVitals(dt:number){
     const potion=this.equipment.active;
     if(potion){const tick=Math.min(dt,potion.remaining),before=this.hero.hp;this.hero.hp=Math.min(this.hero.maxHp,this.hero.hp+potion.hpPerSecond*tick);this.hero.mana=Math.min(this.maxMana,this.hero.mana+potion.manaPerSecond*tick);potion.remaining-=tick;potion.healed+=this.hero.hp-before;if(potion.remaining<=1e-8){if(potion.healed>0)this.events.push({kind:'heal',point:{...this.hero},amount:potion.healed});this.equipment.active=null;}}
-    this.hero.mana = Math.min(this.maxMana, this.hero.mana + this.maxMana * .008 * dt);
+    this.hero.mana = Math.min(this.maxMana, this.hero.mana + this.maxMana * (.008+this.buffs.extraManaRegen) * dt);
     this.hero.hp = Math.min(this.hero.maxHp, this.hero.hp + this.hero.maxHp * 0.003 * dt);
     if (this.elapsed - this.lastCombat > 6) this.hero.fury = Math.max(0, this.hero.fury - 10 * dt);
     if (this.ultimateRemaining > 0) {
@@ -339,7 +346,7 @@ export class Combat {
       .sort((a,b)=>Number(a.kind==='building')-Number(b.kind==='building')||distance(this.hero,a)-distance(this.hero,b))[0];
   }
   private basicHit(target: Dummy, raw: number, source: string) {
-    if (!this.profile.projectileSpeed) { this.hurt(target, raw, source, true, 'physical', 'basic');this.abilities.onBasicHit(target); return; }
+    if (!this.profile.projectileSpeed) { this.hurt(target, raw, source, true, 'physical', 'basic');this.abilities.onBasicHit(target);this.buffs.onBasicHit(target); return; }
     this.offensiveAction();
     this.projectiles.push({ x:this.hero.x, y:this.hero.y, target, generation:target.generation, damage:raw });
   }
@@ -347,7 +354,7 @@ export class Combat {
     this.projectiles = this.projectiles.filter(p => {
       if (!p.target.alive || p.target.generation !== p.generation) return false;
       const d = distance(p, p.target), travel = this.profile.projectileSpeed * dt;
-      if (d <= travel) { this.hurt(p.target, p.damage, '기본 공격', true, 'physical', 'basic', false);this.abilities.onBasicHit(p.target); return false; }
+      if (d <= travel) { this.hurt(p.target, p.damage, '기본 공격', true, 'physical', 'basic', false);this.abilities.onBasicHit(p.target);this.buffs.onBasicHit(p.target); return false; }
       p.x += (p.target.x-p.x)/d*travel; p.y += (p.target.y-p.y)/d*travel;
       return true;
     });
