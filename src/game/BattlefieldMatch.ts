@@ -152,6 +152,8 @@ export class BattlefieldMatch extends Squad {
     this.championTargets.push(...redTargets);
     this.enemies.push(...redTargets);
 
+    for(const camp of this.jungle.camps)camp.onDeath=()=>this.rewardJungleCamp(camp);
+
     for(const actor of this.actors){
       const team=this.teamOf(actor);
       actor.onDeath=()=>this.rewardChampion(actor);
@@ -188,6 +190,20 @@ export class BattlefieldMatch extends Squad {
     this.economy[team].add(120);
     const eligible=this.teamMembers(team).filter(actor=>actor.alive&&!actor.progression.capped&&distance(actor.hero,victim.hero)<=PROGRESSION.rewardRange);
     for(const actor of eligible)actor.gainExperience((120+victim.progression.level*20)/eligible.length);
+  }
+
+  private rewardJungleCamp(camp:JungleCamp){
+    if(this.result||!camp.lastDamager)return;
+    const killer=this.actors.find(actor=>actor.profile.id===camp.lastDamager);
+    if(!killer)return;
+    const team=this.teamOf(killer);
+    this.economy[team].add(JUNGLE.reward.gold);
+    const eligible=this.teamMembers(team).filter(actor=>
+      actor.alive&&!actor.progression.capped&&distance(actor.hero,camp)<=PROGRESSION.rewardRange
+    );
+    if(!eligible.length)return;
+    const share=JUNGLE.reward.xp/eligible.length;
+    for(const actor of eligible)actor.gainExperience(share);
   }
 
   shopReason(actor:Combat,item:Purchase){

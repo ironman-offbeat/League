@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RULES, distance } from '../src/game/config.ts';
+import { PROGRESSION } from '../src/game/progression.ts';
 import { damageTarget } from '../src/game/targets.ts';
 import { BattlefieldMatch } from '../src/game/BattlefieldMatch.ts';
 import { JUNGLE, JungleState } from '../src/game/Jungle.ts';
@@ -247,4 +248,74 @@ test('jungle monster resets when its aggro target dies',()=>{
   assert.equal(camp.aggro,null);
   assert.equal(distance(camp,camp.point),0);
   assert.equal(camp.hp,camp.maxHp);
+});
+
+
+test('jungle reward goes to the team of the last champion that dealt damage',()=>{
+  const match=new BattlefieldMatch();
+  match.jungle.step(JUNGLE.firstSpawn);
+  const camp=match.jungle.camp('blue-red');
+  const blue=match.members[0];
+  const red=match.opponents[0];
+  blue.hero.x=camp.x;blue.hero.y=camp.y;
+  red.hero.x=camp.x;red.hero.y=camp.y;
+
+  const blueGold=match.economy.blue.gold;
+  const redGold=match.economy.red.gold;
+  blue.hurt(camp,100,'poke',false,'physical','basic');
+  red.hurt(camp,1e9,'last hit',false,'physical','basic');
+
+  assert.equal(camp.alive,false);
+  assert.equal(camp.lastDamager,red.profile.id);
+  assert.equal(match.economy.blue.gold,blueGold);
+  assert.equal(match.economy.red.gold,redGold+JUNGLE.reward.gold);
+});
+
+test('jungle xp is shared only by living uncapped teammates inside reward range',()=>{
+  const match=new BattlefieldMatch();
+  match.jungle.step(JUNGLE.firstSpawn);
+  const camp=match.jungle.camp('red-blue');
+  const killer=match.members[0];
+  const helper=match.members[1];
+  const far=match.members[2];
+  killer.hero.x=camp.x;killer.hero.y=camp.y;
+  helper.hero.x=camp.x+40;helper.hero.y=camp.y;
+  far.hero.x=camp.x+PROGRESSION.rewardRange+40;far.hero.y=camp.y;
+
+  const beforeKiller=killer.progression.totalXp;
+  const beforeHelper=helper.progression.totalXp;
+  const beforeFar=far.progression.totalXp;
+  killer.hurt(camp,1e9,'last hit',false,'physical','basic');
+
+  assert.equal(killer.progression.totalXp-beforeKiller,JUNGLE.reward.xp/2);
+  assert.equal(helper.progression.totalXp-beforeHelper,JUNGLE.reward.xp/2);
+  assert.equal(far.progression.totalXp-beforeFar,0);
+});
+
+test('manual jungle defeat without a valid champion damager gives no reward and cannot duplicate reward',()=>{
+  const match=new BattlefieldMatch();
+  match.jungle.step(JUNGLE.firstSpawn);
+  const camp=match.jungle.camp('blue-blue');
+  const blueGold=match.economy.blue.gold;
+  const redGold=match.economy.red.gold;
+
+  assert.equal(camp.defeat(JUNGLE.firstSpawn),true);
+  assert.equal(match.economy.blue.gold,blueGold);
+  assert.equal(match.economy.red.gold,redGold);
+  assert.equal(camp.defeat(JUNGLE.firstSpawn+1),false);
+  assert.equal(match.economy.blue.gold,blueGold);
+  assert.equal(match.economy.red.gold,redGold);
+});
+
+test('jungle leash reset clears previous last-hit attribution',()=>{
+  const match=new BattlefieldMatch();
+  match.jungle.step(JUNGLE.firstSpawn);
+  const camp=match.jungle.camp('blue-red');
+  const blue=match.members[0];
+  blue.hero.x=camp.x;blue.hero.y=camp.y;
+
+  blue.hurt(camp,100,'poke',false,'physical','basic');
+  assert.equal(camp.lastDamager,blue.profile.id);
+  camp.restoreAtHome();
+  assert.equal(camp.lastDamager,null);
 });
