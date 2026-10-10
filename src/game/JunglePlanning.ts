@@ -132,3 +132,109 @@ export function chooseJungleAssist(
     a.pathDistance-b.pathDistance||a.allyHealth-b.allyHealth||a.lane.localeCompare(b.lane)
   )[0]??null;
 }
+
+export const JUNGLE_INVADE_RULES={
+  enterHealth:.78,
+  continueHealth:.32,
+  finishHealth:.11,
+  enterMana:.25,
+  continueMana:.12,
+  enemyAvoidRadius:320,
+  maxTravel:1450,
+  maxNodeSnap:380,
+  edgeSample:45,
+  retryDelay:15,
+  retreatArrival:85,
+} as const;
+
+export type JungleInvadeContext={
+  position:Point;
+  team:NavigationTeam;
+  actorId:string;
+  camps:readonly JungleCamp[];
+  buffs:JungleBuffTimers;
+  healthRatio:number;
+  manaRatio:number;
+  continuing:boolean;
+  preferredId?:string|null;
+  visibleEnemyChampions:readonly Point[];
+  canSeeCamp:(camp:JungleCamp)=>boolean;
+  safeFromTowers:(point:Point)=>boolean;
+  graph?:NavigationGraph;
+};
+
+// Validate edges as well as nodes: a straight movement segment may pass
+// through a tower's range even when its endpoints are clear.
+export function jungleSafeSegment(a:Point,b:Point,safe:(point:Point)=>boolean){
+  const count=Math.max(1,Math.ceil(distance(a,b)/JUNGLE_INVADE_RULES.edgeSample));
+  for(let index=0;index<=count;index++){
+    const t=index/count;
+    if(!safe({x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t}))return false;
+  }
+  return true;
+}
+
+export function jungleSafeRoute(
+  from:Point,
+  toId:string,
+  safe:(point:Point)=>boolean,
+  graph:NavigationGraph=BATTLEFIELD_NAVIGATION,
+):{pathIds:string[];pathDistance:number}|null{
+  if(!safe(from))return null;
+  const start=graph.nearest(from,node=>safe(node.point));
+  if(!start||distance(from,start.point)>JUNGLE_INVADE_RULES.maxNodeSnap||
+     !jungleSafeSegment(from,start.point,safe))return null;
+  const ids=graph.shortestPathIds(
+    start.id,toId,
+    node=>safe(node.point),
+    (a,b)=>jungleSafeSegment(a.point,b.point,safe),
+  );
+  if(!ids.length)return null;
+  let pathDistance=distance(from,start.point);
+  for(let i=1;i<ids.length;i++){
+    pathDistance+=distance(graph.node(ids[i-1]).point,graph.node(ids[i]).point);
+  }
+  return {pathIds:ids,pathDistance};
+}
+
+// Invasion must be based on LIVE team vision, never omniscient knowledge of
+// enemy camp state. Home-side farming, health, mana and route safety take
+// precedence; attacking monsters already owned by another unit is excluded.
+export function chooseJungleInvade(ctx:JungleInvadeContext):JungleCampPlan|null{
+  const graph=ctx.graph??BATTLEFIELD_NAVIGATION;
+  if(chooseJungleCampForBuffs(ctx.position,ctx.team,ctx.camps,ctx.buffs,null,graph))return null;
+
+  const safe=(point:Point)=>
+    ctx.safeFromTowers(point)&&!ctx.visibleEnemyChampions.some(
+      enemy=>distance(enemy,point)<=JUNGLE_INVADE_RULES.enemyAvoidRadius
+    );
+  const candidates:JungleCampPlan[]=[];
+  for(const camp of ctx.camps){
+    if(camp.side===ctx.team||!camp.alive||
+      ctx.buffs[camp.buff]>JUNGLE_AI_RULES.buffRefreshWindow||
+      !ctx.canSeeCamp(camp)||
+      (camp.aggro!==null&&camp.aggro!==ctx.actorId)||
+      !safe(camp)||!safe(camp.point))continue;
+
+    const finishing=ctx.continuing&&camp.id===ctx.preferredId&&
+      camp.aggro===ctx.actorId&&camp.hp/camp.maxHp<=.36;
+    const minHealth=ctx.continuing
+      ?finishing?JUNGLE_INVADE_RULES.finishHealth:JUNGLE_INVADE_RULES.continueHealth
+      :JUNGLE_INVADE_RULES.enterHealth;
+    const minMana=ctx.continuing?JUNGLE_INVADE_RULES.continueMana:JUNGLE_INVADE_RULES.enterMana;
+    if(ctx.healthRatio<=minHealth||ctx.manaRatio<=minMana)continue;
+
+    const route=jungleSafeRoute(ctx.position,camp.definition.nodeId,safe,graph);
+    if(!route||route.pathDistance>JUNGLE_INVADE_RULES.maxTravel||
+      !jungleSafeSegment(graph.node(camp.definition.nodeId).point,camp,safe))continue;
+    candidates.push({camp,pathIds:route.pathIds,pathDistance:route.pathDistance});
+  }
+  candidates.sort((a,b)=>{
+    const priority=(p:JungleCampPlan)=>ctx.buffs[p.camp.buff]<=0?0:1;
+    return priority(a)-priority(b)||a.pathDistance-b.pathDistance||a.camp.id.localeCompare(b.camp.id);
+  });
+  if(!candidates.length)return null;
+  const firstPriority=ctx.buffs[candidates[0].camp.buff]<=0?0:1;
+  return candidates.find(p=>p.camp.id===ctx.preferredId&&
+    (ctx.buffs[p.camp.buff]<=0?0:1)===firstPriority)??candidates[0];
+}

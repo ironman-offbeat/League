@@ -15,7 +15,8 @@ import type {
 } from './BattlefieldMatch.ts';
 import { BATTLEFIELD_NAVIGATION } from './navigation.ts';
 import type { LaneId } from './navigation.ts';
-import { chooseJungleCampForBuffs, chooseJungleAssist, JUNGLE_AI_RULES } from './JunglePlanning.ts';
+import { chooseJungleCampForBuffs, chooseJungleAssist, chooseJungleInvade, jungleSafeRoute, JUNGLE_AI_RULES, JUNGLE_INVADE_RULES } from './JunglePlanning.ts';
+import type { JungleCampPlan } from './JunglePlanning.ts';
 import type { JungleLaneSignal } from './JunglePlanning.ts';
 
 export const BATTLEFIELD_AI_RULES={
@@ -34,7 +35,7 @@ export const BATTLEFIELD_AI_RULES={
   jungleFinishMinimumHP:.1,
 } as const;
 
-export type BattlefieldAIState='waiting'|'advance'|'fight'|'patrol'|'river-patrol'|'lane-assist'|'camp-approach'|'camp-fight'|'retreat'|'recall'|'recover'|'dead';
+export type BattlefieldAIState='waiting'|'advance'|'fight'|'patrol'|'river-patrol'|'lane-assist'|'camp-approach'|'camp-fight'|'invade-approach'|'invade-fight'|'invade-withdraw'|'retreat'|'recall'|'recover'|'dead';
 
 const LANE_ROLES:readonly LaneId[]=['top','mid','bottom'];
 const RIVER_PATROL:Record<BattlefieldTeam,readonly string[]>={
@@ -52,6 +53,9 @@ export class BattlefieldAI {
   private recovering=false;
   private patrolIndex=0;
   private selectedCampId:string|null=null;
+  private invadedCampId:string|null=null;
+  private invadeRetryAt=0;
+  private invadeWithdrawing=false;
   readonly actor:Combat;
   readonly role:BattlefieldRole;
   private readonly match:BattlefieldMatch;
@@ -88,7 +92,7 @@ export class BattlefieldAI {
 
     if(hp<BATTLEFIELD_AI_RULES.potionHP)c.usePotion();
     const finishableCamp=this.role==='jungle'&&!threats.length&&m.jungle.camps.some(camp=>
-      camp.alive&&camp.side===team&&camp.aggro===c.profile.id&&
+      camp.alive&&(camp.side===team||camp.id===this.invadedCampId)&&camp.aggro===c.profile.id&&
       camp.hp/camp.maxHp<=BATTLEFIELD_AI_RULES.jungleFinishCampHP&&
       hp>BATTLEFIELD_AI_RULES.jungleFinishMinimumHP&&
       distance(c.hero,camp)<=BATTLEFIELD_AI_RULES.engage
@@ -98,6 +102,11 @@ export class BattlefieldAI {
     if((hp<BATTLEFIELD_AI_RULES.retreatHP&&!finishableCamp)||(c.maxMana>0&&mana<.12))this.recovering=true;
 
     if(this.recovering){
+      if(this.role==='jungle'&&(this.invadedCampId||this.invadeWithdrawing)){
+        this.invadedCampId=null;
+        this.invadeWithdrawing=false;
+        this.invadeRetryAt=Math.max(this.invadeRetryAt,m.elapsed+JUNGLE_INVADE_RULES.retryDelay);
+      }
       const fountain=battlefieldFountain(team);
       if(distance(c.hero,fountain)<70){
         this.state='recover';
@@ -126,6 +135,10 @@ export class BattlefieldAI {
 
     const dangerous=this.dangerousTowerAt(c.hero,team);
     if(dangerous){
+      if(this.role==='jungle'&&this.invadedCampId){
+        this.cancelInvasion(team);
+        return;
+      }
       this.state='retreat';
       if(this.role==='jungle'){
         this.move(battlefieldFountain(team));
@@ -135,6 +148,19 @@ export class BattlefieldAI {
       }
       return;
     }
+
+    // An invasion is aborted before PvP target selection when fresh team
+    // vision or tower status reveals a dangerous route or contested camp.
+    if(this.role==='jungle'&&this.invadedCampId){
+      const plan=this.invasionPlan(team);
+      if(!plan||plan.camp.id!==this.invadedCampId){
+        this.cancelInvasion(team);
+      }else{
+        this.followInvasion(plan);
+      }
+      return;
+    }
+    if(this.role==='jungle'&&this.invadeWithdrawing&&this.stepInvasionWithdraw(team))return;
 
     const local=c.enemies.filter(target=>
       target.alive&&!target.protected&&target.kind!=='building'&&target.kind!=='monster'&&c.canSee(target)&&
@@ -231,11 +257,73 @@ export class BattlefieldAI {
       return;
     }
     this.selectedCampId=null;
+    if(m.elapsed>=this.invadeRetryAt){
+      const invasion=this.invasionPlan(team);
+      if(invasion){
+        this.invadedCampId=invasion.camp.id;
+        this.followInvasion(invasion);
+        return;
+      }
+    }
     // Before any camp appears, preserve the familiar home-side scouting loop.
     // Once the jungle cycle begins, use river-only patrol rather than camping
     // empty spawn locations while buffs are active or camps await respawn.
     const started=m.jungle.camps.some(camp=>camp.alive||camp.lastDefeatedAt!==null);
     this.stepJunglePatrol(team,started?'river-patrol':'patrol');
+  }
+
+  private invasionPlan(team:BattlefieldTeam):JungleCampPlan|null{
+    const c=this.actor,m=this.match,enemyTeam:BattlefieldTeam=team==='blue'?'red':'blue';
+    const visible=m.teamMembers(enemyTeam).filter(actor=>{
+      const target=m.championTargets.find(value=>value.id===actor.profile.id);
+      return actor.alive&&!!target&&m.canSee(team,target);
+    });
+    return chooseJungleInvade({
+      position:c.hero,team,actorId:c.profile.id,camps:m.jungle.camps,
+      buffs:{red:c.buffs.red,blue:c.buffs.blue},
+      healthRatio:c.hero.hp/c.hero.maxHp,
+      manaRatio:c.maxMana?c.hero.mana/c.maxMana:1,
+      continuing:this.invadedCampId!==null,preferredId:this.invadedCampId,
+      visibleEnemyChampions:visible.map(actor=>actor.hero),
+      canSeeCamp:camp=>m.canSee(team,camp),
+      safeFromTowers:point=>!this.dangerousTowerAt(point,team),
+    });
+  }
+
+  private followInvasion(plan:JungleCampPlan){
+    const c=this.actor,camp=plan.camp;
+    if(c.canSee(camp)&&distance(c.hero,camp)<=JUNGLE_AI_RULES.attackInitiateRange){
+      this.state='invade-fight';
+      this.attack(camp);
+      return;
+    }
+    this.state='invade-approach';
+    const nextId=plan.pathIds.length>1?plan.pathIds[1]:camp.definition.nodeId;
+    this.move(BATTLEFIELD_NAVIGATION.node(nextId).point);
+  }
+
+  private cancelInvasion(team:BattlefieldTeam){
+    this.invadedCampId=null;
+    this.invadeRetryAt=Math.max(this.invadeRetryAt,this.match.elapsed+JUNGLE_INVADE_RULES.retryDelay);
+    this.invadeWithdrawing=true;
+    this.stepInvasionWithdraw(team);
+  }
+
+  private stepInvasionWithdraw(team:BattlefieldTeam):boolean{
+    const c=this.actor,goal=this.jungleRetreatPoint(team);
+    if(distance(c.hero,goal)<=JUNGLE_INVADE_RULES.retreatArrival){
+      this.invadeWithdrawing=false;
+      return false;
+    }
+    this.state='invade-withdraw';
+    const path=jungleSafeRoute(c.hero,team==='blue'?'blue-jungle-bottom':'red-jungle-top',
+      point=>!this.dangerousTowerAt(point,team));
+    const nextId=path&&path.pathIds.length>1?path.pathIds[1]:null;
+    // If the map offers no fully tower-safe route, retreat to the nearest
+    // safe navigation waypoint rather than resuming a stale attack command.
+    const nearest=BATTLEFIELD_NAVIGATION.nearest(c.hero,node=>!this.dangerousTowerAt(node.point,team));
+    this.move(nextId?BATTLEFIELD_NAVIGATION.node(nextId).point:nearest?.point??goal);
+    return true;
   }
 
   private chooseLaneAssist(team:BattlefieldTeam){
