@@ -15,7 +15,8 @@ import type {
 } from './BattlefieldMatch.ts';
 import { BATTLEFIELD_NAVIGATION } from './navigation.ts';
 import type { LaneId } from './navigation.ts';
-import { chooseJungleCamp, JUNGLE_AI_RULES } from './JunglePlanning.ts';
+import { chooseJungleCampForBuffs, chooseJungleAssist, JUNGLE_AI_RULES } from './JunglePlanning.ts';
+import type { JungleLaneSignal } from './JunglePlanning.ts';
 
 export const BATTLEFIELD_AI_RULES={
   interval:.3,
@@ -33,9 +34,13 @@ export const BATTLEFIELD_AI_RULES={
   jungleFinishMinimumHP:.1,
 } as const;
 
-export type BattlefieldAIState='waiting'|'advance'|'fight'|'patrol'|'camp-approach'|'camp-fight'|'retreat'|'recall'|'recover'|'dead';
+export type BattlefieldAIState='waiting'|'advance'|'fight'|'patrol'|'river-patrol'|'lane-assist'|'camp-approach'|'camp-fight'|'retreat'|'recall'|'recover'|'dead';
 
 const LANE_ROLES:readonly LaneId[]=['top','mid','bottom'];
+const RIVER_PATROL:Record<BattlefieldTeam,readonly string[]>={
+  blue:['river-north','river-south'],
+  red:['river-south','river-north'],
+};
 const PATROL:Record<BattlefieldTeam,readonly string[]>={
   blue:['blue-jungle-top','river-north','blue-jungle-bottom','river-south'],
   red:['red-jungle-bottom','river-south','red-jungle-top','river-north'],
@@ -192,14 +197,29 @@ export class BattlefieldAI {
   }
 
   private stepJungle(team:BattlefieldTeam){
-    const c=this.actor;
-    const plan=chooseJungleCamp(c.hero,team,this.match.jungle.camps,this.selectedCampId);
+    const c=this.actor,m=this.match;
+    const buffs={red:c.buffs.red,blue:c.buffs.blue};
+    const plan=chooseJungleCampForBuffs(c.hero,team,m.jungle.camps,buffs,this.selectedCampId);
+    const engaged=plan&&plan.camp.aggro===c.profile.id;
+    const bothBuffs=buffs.red>JUNGLE_AI_RULES.buffRefreshWindow&&
+      buffs.blue>JUNGLE_AI_RULES.buffRefreshWindow;
+    const assist=this.chooseLaneAssist(team);
+    // Finishing an engaged camp avoids resetting its entire HP. Otherwise,
+    // urgent lane defense can interrupt farming, or buffs permit a gank.
+    if(assist&&(!engaged&&(bothBuffs||!plan||
+      assist.allyHealth<=JUNGLE_AI_RULES.urgentAllyHP))){
+      this.selectedCampId=null;
+      const next=assist.pathIds.length>1?
+        BATTLEFIELD_NAVIGATION.node(assist.pathIds[1]).point:assist.ally;
+      this.state='lane-assist';
+      if(distance(c.hero,assist.ally)>JUNGLE_AI_RULES.assistJoinRange)this.move(next);
+      else this.move(assist.ally);
+      return;
+    }
+
     if(plan){
       const camp=plan.camp;
       this.selectedCampId=camp.id;
-      // Enter combat only after actually seeing the monster and arriving
-      // close to its spawn. Attack() then runs the existing Combat target,
-      // skill, aggro, loot and buff systems without a jungle-specific hit path.
       if(c.canSee(camp)&&distance(c.hero,camp)<=JUNGLE_AI_RULES.attackInitiateRange){
         this.state='camp-fight';
         this.attack(camp);
@@ -211,21 +231,53 @@ export class BattlefieldAI {
       return;
     }
     this.selectedCampId=null;
-    const route=PATROL[team];
+    // Before any camp appears, preserve the familiar home-side scouting loop.
+    // Once the jungle cycle begins, use river-only patrol rather than camping
+    // empty spawn locations while buffs are active or camps await respawn.
+    const started=m.jungle.camps.some(camp=>camp.alive||camp.lastDefeatedAt!==null);
+    this.stepJunglePatrol(team,started?'river-patrol':'patrol');
+  }
+
+  private chooseLaneAssist(team:BattlefieldTeam){
+    const m=this.match,enemyTeam:BattlefieldTeam=team==='blue'?'red':'blue';
+    const signals:JungleLaneSignal[]=[];
+    for(const ally of m.teamMembers(team)){
+      const role=BATTLEFIELD_ROLE_BY_CHAMPION[ally.visualId as keyof typeof BATTLEFIELD_ROLE_BY_CHAMPION];
+      if(!ally.alive||role==='jungle')continue;
+      const visible=m.teamMembers(enemyTeam).filter(enemy=>{
+        const target=m.championTargets.find(value=>value.id===enemy.profile.id);
+        return enemy.alive&&!!target&&m.canSee(team,target)&&
+          distance(enemy.hero,ally.hero)<=JUNGLE_AI_RULES.assistEnemyRange;
+      });
+      // The jungler plus the allied laner should not blindly enter an
+      // outnumbered fight based on unseen enemies.
+      if(visible.length>2)continue;
+      for(const enemy of visible){
+        signals.push({
+          lane:role,ally:ally.hero,enemy:enemy.hero,
+          allyHealth:ally.hero.hp/ally.hero.maxHp,
+        });
+      }
+    }
+    return chooseJungleAssist(this.actor.hero,signals,
+      point=>!this.dangerousTowerAt(point,team));
+  }
+
+  private stepJunglePatrol(team:BattlefieldTeam,state:'patrol'|'river-patrol'){
+    const c=this.actor;
+    const route=state==='river-patrol'?RIVER_PATROL[team]:PATROL[team];
     let targetId=route[this.patrolIndex%route.length];
     let target=BATTLEFIELD_NAVIGATION.node(targetId);
     if(distance(c.hero,target.point)<BATTLEFIELD_AI_RULES.patrolReach){
       this.patrolIndex=(this.patrolIndex+1)%route.length;
-      targetId=route[this.patrolIndex];
+      targetId=route[this.patrolIndex%route.length];
       target=BATTLEFIELD_NAVIGATION.node(targetId);
     }
-
     const current=BATTLEFIELD_NAVIGATION.nearest(c.hero);
     const path=current?BATTLEFIELD_NAVIGATION.shortestPathIds(current.id,targetId):[];
     const nextId=path.length>1?path[1]:targetId;
-    const goal=BATTLEFIELD_NAVIGATION.node(nextId).point;
-    this.state='patrol';
-    this.move(goal);
+    this.state=state;
+    this.move(BATTLEFIELD_NAVIGATION.node(nextId).point);
   }
 
   private jungleRetreatPoint(team:BattlefieldTeam){
