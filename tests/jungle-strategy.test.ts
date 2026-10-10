@@ -97,8 +97,8 @@ test('AI prioritizes a missing buff camp then chooses river patrol with both buf
 test('AI joins a lane with a visible enemy and safe graph route instead of farming refreshed buffs',()=>{
   const match=readyMatch(),brain=match.ai[3],jungler=brain.actor;
   jungler.grantJungleBuff('red');jungler.grantJungleBuff('blue');
-  jungler.hero.x=1210;jungler.hero.y=500;
-  jungler.anchor={x:1210,y:500};
+  jungler.hero.x=1280;jungler.hero.y=600;
+  jungler.anchor={x:1280,y:600};
   const ally=match.opponents.find(x=>x.visualId==='annie')!;
   const enemy=match.members.find(x=>x.visualId==='annie')!;
   ally.hero.x=920;ally.hero.y=400;ally.anchor={x:920,y:400};
@@ -115,8 +115,8 @@ test('AI joins a lane with a visible enemy and safe graph route instead of farmi
 
 test('urgent visible lane defense may preempt buff farming but fogged enemies never trigger assistance',()=>{
   const match=readyMatch(),brain=match.ai[3],jungler=brain.actor;
-  jungler.hero.x=1210;jungler.hero.y=500;
-  jungler.anchor={x:1210,y:500};
+  jungler.hero.x=1280;jungler.hero.y=600;
+  jungler.anchor={x:1280,y:600};
   const ally=match.opponents.find(x=>x.visualId==='annie')!;
   const enemy=match.members.find(x=>x.visualId==='annie')!;
   ally.hero.x=920;ally.hero.y=400;ally.anchor={x:920,y:400};
@@ -136,7 +136,7 @@ test('urgent visible lane defense may preempt buff farming but fogged enemies ne
 test('AI rejects unsafe enemy tower dives even with both buffs and visible lane pressure',()=>{
   const match=readyMatch(),brain=match.ai[3],jungler=brain.actor;
   jungler.grantJungleBuff('red');jungler.grantJungleBuff('blue');
-  jungler.hero.x=1210;jungler.hero.y=500;jungler.anchor={x:1210,y:500};
+  jungler.hero.x=1280;jungler.hero.y=600;jungler.anchor={x:1280,y:600};
   const ally=match.opponents.find(x=>x.visualId==='annie')!;
   const enemy=match.members.find(x=>x.visualId==='annie')!;
   ally.hero.x=900;ally.hero.y=400;ally.anchor={x:900,y:400};
