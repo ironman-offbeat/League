@@ -106,7 +106,7 @@ test('jungle AI switches to another home camp after the selected one dies, and p
   const second=match.jungle.camp('red-blue');
   second.defeat(match.elapsed);
   brain.step(BATTLEFIELD_AI_RULES.interval);
-  assert.equal(brain.state,'patrol');
+  assert.equal(brain.state,'river-patrol');
 });
 
 test('jungle AI can finish a monster and receive its buff, XP and team gold through ordinary combat',()=>{
