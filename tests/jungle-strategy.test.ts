@@ -101,8 +101,8 @@ test('AI joins a lane with a visible enemy and safe graph route instead of farmi
   jungler.anchor={x:1280,y:600};
   const ally=match.opponents.find(x=>x.visualId==='annie')!;
   const enemy=match.members.find(x=>x.visualId==='annie')!;
-  ally.hero.x=920;ally.hero.y=400;ally.anchor={x:920,y:400};
-  enemy.hero.x=895;enemy.hero.y=400;enemy.anchor={x:895,y:400};
+  ally.hero.x=1010;ally.hero.y=350;ally.anchor={x:1010,y:350};
+  enemy.hero.x=990;enemy.hero.y=350;enemy.anchor={x:990,y:350};
   for(const other of match.members.filter(x=>x!==enemy)){
     other.hero.x=100;other.hero.y=900;
   }
@@ -119,9 +119,9 @@ test('urgent visible lane defense may preempt buff farming but fogged enemies ne
   jungler.anchor={x:1280,y:600};
   const ally=match.opponents.find(x=>x.visualId==='annie')!;
   const enemy=match.members.find(x=>x.visualId==='annie')!;
-  ally.hero.x=920;ally.hero.y=400;ally.anchor={x:920,y:400};
+  ally.hero.x=1010;ally.hero.y=350;ally.anchor={x:1010,y:350};
   ally.hero.hp=ally.hero.maxHp*.45;
-  enemy.hero.x=900;enemy.hero.y=400;enemy.anchor={x:900,y:400};
+  enemy.hero.x=990;enemy.hero.y=350;enemy.anchor={x:990,y:350};
   for(const other of match.members.filter(x=>x!==enemy)){other.hero.x=100;other.hero.y=900;}
   match.refreshVision();
   brain.step(BATTLEFIELD_AI_RULES.interval);
@@ -139,11 +139,11 @@ test('AI rejects unsafe enemy tower dives even with both buffs and visible lane 
   jungler.hero.x=1280;jungler.hero.y=600;jungler.anchor={x:1280,y:600};
   const ally=match.opponents.find(x=>x.visualId==='annie')!;
   const enemy=match.members.find(x=>x.visualId==='annie')!;
-  ally.hero.x=900;ally.hero.y=400;ally.anchor={x:900,y:400};
-  enemy.hero.x=880;enemy.hero.y=400;enemy.anchor={x:880,y:400};
+  ally.hero.x=1010;ally.hero.y=350;ally.anchor={x:1010,y:350};
+  enemy.hero.x=990;enemy.hero.y=350;enemy.anchor={x:990,y:350};
   for(const other of match.members.filter(x=>x!==enemy)){other.hero.x=100;other.hero.y=900;}
   const tower=match.structure('blue','outer','mid');
-  tower.x=840;tower.y=400;
+  tower.x=985;tower.y=350;
   match.refreshVision();
   brain.step(BATTLEFIELD_AI_RULES.interval);
   assert.notEqual(brain.state,'lane-assist');
