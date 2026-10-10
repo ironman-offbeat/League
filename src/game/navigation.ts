@@ -57,7 +57,7 @@ export class NavigationGraph {
     return best?this.node(best.id):null;
   }
 
-  shortestPathIds(from:string,to:string,allowed:(node:NavigationNode)=>boolean=()=>true):string[]{
+  shortestPathIds(from:string,to:string,allowed:(node:NavigationNode)=>boolean=()=>true,allowedEdge:(from:NavigationNode,to:NavigationNode)=>boolean=()=>true):string[]{
     const start=this.nodes.get(from),goal=this.nodes.get(to);
     if(!start||!goal)throw new Error(`unknown navigation path: ${from} -> ${to}`);
     if(!allowed(start)||!allowed(goal))return [];
@@ -83,7 +83,7 @@ export class NavigationGraph {
       const currentNode=this.nodes.get(current)!;
       for(const next of this.links.get(current)!){
         const node=this.nodes.get(next)!;
-        if(!allowed(node))continue;
+        if(!allowed(node)||!allowedEdge(currentNode,node))continue;
         const nextCost=(cost.get(current)??Infinity)+distance(currentNode.point,node.point);
         if(nextCost+1e-8<(cost.get(next)??Infinity)){
           cost.set(next,nextCost);
