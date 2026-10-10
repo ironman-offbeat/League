@@ -7,6 +7,7 @@ import type { JungleInvadeContext } from '../src/game/JunglePlanning.ts';
 import { JUNGLE, JungleState } from '../src/game/Jungle.ts';
 import { BATTLEFIELD_NAVIGATION, NavigationGraph } from '../src/game/navigation.ts';
 import { RULES } from '../src/game/config.ts';
+import { PROGRESSION } from '../src/game/progression.ts';
 
 function jungleForSteal(){
   const jungle=new JungleState();
@@ -57,7 +58,7 @@ test('enemy camp invasion rejects low health, insufficient mana, enemy presence 
 test('enemy tower danger and disconnected or overly long paths prohibit invasions',()=>{
   const jungle=jungleForSteal(),ctx=invasionContext(jungle);
   assert.equal(chooseJungleInvade({...ctx,safeFromTowers:p=>p.x>510}),null);
-  assert.equal(chooseJungleInvade({...ctx,position:{x:80,y:950}}),null);
+  assert.equal(chooseJungleInvade({...ctx,position:{x:-1200,y:-900}}),null);
   const disconnected=new NavigationGraph([
     {id:'red-jungle-top',point:{x:1130,y:240},tags:['jungle']},
     {id:'blue-jungle-top',point:{x:390,y:500},tags:['jungle']},
@@ -197,7 +198,9 @@ test('enemy buff steal reuses ordinary target damage, team gold and killer buff 
   assert.ok(match.economy.red.earned>=gold+JUNGLE.reward.gold);
   assert.ok(brain.actor.progression.totalXp>xp);
   assert.ok(brain.actor.buffs.blue>0);
-  assert.equal(match.economy.blue.earned,0);
+  const passive=(match.elapsed-JUNGLE.firstSpawn)*PROGRESSION.passiveGoldPerSecond;
+  assert.ok(Math.abs(match.economy.blue.earned-passive)<1e-5,
+    'Opponent must receive passive gold, but no stolen jungle kill reward');
 });
 
 test('critical health ends invasion before a jungle death and retains fountain recovery behavior',()=>{
