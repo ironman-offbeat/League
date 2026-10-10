@@ -313,6 +313,10 @@ export class BattlefieldAI {
     const c=this.actor,goal=this.jungleRetreatPoint(team);
     if(distance(c.hero,goal)<=JUNGLE_INVADE_RULES.retreatArrival){
       this.invadeWithdrawing=false;
+      // Replace any stale monster-attack order even if the aborted invasion
+      // started at the home jungle entry point.
+      this.state='invade-withdraw';
+      this.move(goal);
       return false;
     }
     this.state='invade-withdraw';

@@ -76,7 +76,7 @@ test('navigation rejects dangerous edge interiors and can use a safe detour',()=
   const route=jungleSafeRoute({x:0,y:0},'goal',safe,graph);
   assert.deepEqual(route?.pathIds,['start','detour','goal']);
   assert.ok(route!.pathDistance>200);
-  const blocked=jungleSafeRoute({x:0,y:0},'goal',p=>p.y===0? p.x===0||p.x===200:false,graph);
+  const blocked=jungleSafeRoute({x:0,y:0},'goal',p=>p.x<=0||p.x>=200,graph);
   assert.equal(blocked,null);
 });
 
@@ -207,4 +207,24 @@ test('critical health ends invasion before a jungle death and retains fountain r
   brain.step(BATTLEFIELD_AI_RULES.interval);
   assert.ok(['recall','retreat','recover'].includes(brain.state));
   assert.notEqual(brain.actor.command.kind,'attack');
+});
+
+test('aborted invasion cannot immediately restart after visibility returns',()=>{
+  const {match,brain,spotter,target}=battlefieldForInvade();
+  brain.step(BATTLEFIELD_AI_RULES.interval);
+  brain.actor.hero.x=900;brain.actor.hero.y=480;
+  brain.actor.anchor={x:900,y:480};
+  spotter.hero.x=1460;spotter.hero.y=160;
+  match.refreshVision();
+  brain.step(BATTLEFIELD_AI_RULES.interval);
+  assert.equal(brain.state,'invade-withdraw');
+
+  brain.actor.hero.x=1130;brain.actor.hero.y=240;
+  brain.actor.anchor={x:1130,y:240};
+  spotter.hero.x=target.x+40;spotter.hero.y=target.y+15;
+  spotter.anchor={x:spotter.hero.x,y:spotter.hero.y};
+  match.refreshVision();
+  brain.step(BATTLEFIELD_AI_RULES.interval);
+  assert.notEqual(brain.state,'invade-approach');
+  assert.notEqual(brain.state,'invade-fight');
 });
