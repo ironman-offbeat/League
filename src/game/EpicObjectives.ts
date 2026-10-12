@@ -1,4 +1,7 @@
 import type { Point } from './config.ts';
+import type { Target } from './targets.ts';
+import { freshStatus, mitigate, tickStatus } from './effects.ts';
+import type { DamageType } from './effects.ts';
 import { BATTLEFIELD_NAVIGATION } from './navigation.ts';
 
 export type EpicObjectiveKind='dragon'|'baron';
@@ -16,11 +19,38 @@ export const EPIC_OBJECTIVES={
   baron:{id:'baron',nodeId:'river-north',firstSpawn:480,respawn:300},
 } as const satisfies Record<EpicObjectiveKind,EpicObjectiveDefinition>;
 
-export class EpicObjective {
+export const EPIC_COMBAT={
+  dragon:{hp:2500,armor:35,magicResist:30},
+  baron:{hp:6500,armor:55,magicResist:45},
+} as const;
+
+export class EpicObjective implements Target {
   readonly definition:EpicObjectiveDefinition;
   readonly id:EpicObjectiveKind;
-  readonly kind:EpicObjectiveKind;
+  readonly kind='monster' as const;
+  readonly objectiveKind:EpicObjectiveKind;
   readonly point:Point;
+  x:number;
+  y:number;
+  hp:number;
+  maxHp:number;
+  armor:number;
+  magicResist:number;
+  visible=true;
+  revealed=0;
+  alert=0;
+  aggro:string|null=null;
+  attackCooldown=0;
+  stunned=0;
+  rooted=0;
+  airborne=0;
+  slow=0;
+  slowRemaining=0;
+  marked=0;
+  respawn=0;
+  lastDamager:string|null=null;
+  onDeath?:(target:Target)=>void;
+  private time=0;
   alive=false;
   generation=0;
   spawnedAt:number|null=null;
@@ -36,16 +66,46 @@ export class EpicObjective {
     }
     this.definition={...definition};
     this.id=definition.id;
-    this.kind=definition.id;
+    this.objectiveKind=definition.id;
     this.point=BATTLEFIELD_NAVIGATION.node(definition.nodeId).point;
+    this.x=this.point.x;
+    this.y=this.point.y;
+    const stats=EPIC_COMBAT[definition.id];
+    this.hp=stats.hp;this.maxHp=stats.hp;
+    this.armor=stats.armor;this.magicResist=stats.magicResist;
     this.nextSpawnAt=definition.firstSpawn;
   }
 
-  step(time:number){
+  private resetCombat(){
+    this.x=this.point.x;this.y=this.point.y;this.hp=this.maxHp;
+    this.lastDamager=null;
+    Object.assign(this,freshStatus(),{revealed:0,alert:0,aggro:null,attackCooldown:0});
+  }
+
+  receiveDamage(raw:number,type:DamageType='physical'){
+    if(!this.alive)return 0;
+    if(raw>0&&this.aggro)this.lastDamager=this.aggro;
+    const lost=Math.min(this.hp,mitigate(raw,type==='physical'?this.armor:this.magicResist));
+    this.hp-=lost;
+    if(this.hp<=0)this.defeat(this.time);
+    return lost;
+  }
+
+  step(time:number,dt=0){
     if(!Number.isFinite(time)||time<0)throw new Error('epic objective time must be finite and nonnegative');
-    if(this.alive||this.nextSpawnAt===null||time+1e-8<this.nextSpawnAt)return false;
+    this.time=time;
+    if(this.alive){
+      tickStatus(this,dt);
+      this.revealed=Math.max(0,this.revealed-dt);
+      this.alert=Math.max(0,this.alert-dt);
+      this.attackCooldown=Math.max(0,this.attackCooldown-dt);
+      return false;
+    }
+    if(this.nextSpawnAt===null||time+1e-8<this.nextSpawnAt)return false;
     if(this.lastDefeatedAt!==null)this.generation++;
     this.alive=true;
+    this.resetCombat();
+    this.respawn=0;
     this.spawnedAt=this.nextSpawnAt;
     this.nextSpawnAt=null;
     this.onSpawn?.(this);
@@ -56,9 +116,13 @@ export class EpicObjective {
     if(!Number.isFinite(time)||time<0)throw new Error('epic objective time must be finite and nonnegative');
     if(!this.alive||this.spawnedAt===null||time<this.spawnedAt)return false;
     this.alive=false;
+    this.hp=0;
     this.lastDefeatedAt=time;
     this.nextSpawnAt=time+this.definition.respawn;
+    this.respawn=this.definition.respawn;
+    Object.assign(this,freshStatus(),{aggro:null,alert:0,attackCooldown:0});
     this.onDefeat?.(this);
+    this.onDeath?.(this);
     return true;
   }
 
@@ -88,7 +152,7 @@ export class EpicObjectiveState {
     return found;
   }
 
-  step(time:number){
-    for(const objective of this.objectives)objective.step(time);
+  step(time:number,dt=0){
+    for(const objective of this.objectives)objective.step(time,dt);
   }
 }
