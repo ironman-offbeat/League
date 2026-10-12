@@ -118,3 +118,64 @@ test('finished matches do not advance objective timers and new matches have fres
   assert.equal(fresh.objectives.objective('dragon').generation,0);
   assert.equal(fresh.objectives.objective('baron').nextSpawnAt,480);
 });
+
+
+test('epic bosses are shared neutral combat targets with no automatic aggro',()=>{
+  const match=new BattlefieldMatch();
+  const dragon=match.objectives.objective('dragon');
+  const baron=match.objectives.objective('baron');
+  for(const actor of match.actors){
+    assert.ok(actor.enemies.includes(dragon));
+    assert.ok(actor.enemies.includes(baron));
+    assert.equal(actor.autoTargetAllowed(dragon),false);
+    assert.equal(actor.autoTargetAllowed(baron),false);
+  }
+  assert.equal(dragon.kind,'monster');
+  assert.ok(baron.maxHp>dragon.maxHp);
+});
+
+test('direct champion attack damages dragon, death fires once and respawn resets health',()=>{
+  const match=new BattlefieldMatch();
+  match.nextWave=Infinity;
+  match.elapsed=EPIC_OBJECTIVES.dragon.firstSpawn;
+  match.objectives.step(match.elapsed);
+  const dragon=match.objectives.objective('dragon');
+  const actor=match.members[3];
+  actor.hero.x=dragon.x-35;actor.hero.y=dragon.y;
+  actor.anchor={x:actor.hero.x,y:actor.hero.y};
+  match.refreshVision();
+  assert.equal(match.canSee('blue',dragon),true);
+  assert.equal(actor.attack(dragon.id),true);
+  const hp=dragon.hp;
+  for(let i=0;i<60;i++)match.step(RULES.step);
+  assert.ok(dragon.hp<hp);
+  dragon.aggro=actor.profile.id;
+  const generation=dragon.generation;
+  let deaths=0;
+  dragon.onDeath=()=>deaths++;
+  dragon.receiveDamage(1e9,'physical');
+  assert.equal(dragon.alive,false);
+  assert.equal(dragon.hp,0);
+  assert.equal(dragon.lastDamager,actor.profile.id);
+  assert.equal(deaths,1);
+  assert.equal(dragon.defeat(match.elapsed),false);
+  assert.equal(deaths,1);
+  match.objectives.step(dragon.nextSpawnAt!);
+  assert.equal(dragon.alive,true);
+  assert.equal(dragon.hp,dragon.maxHp);
+  assert.equal(dragon.lastDamager,null);
+  assert.equal(dragon.generation,generation+1);
+});
+
+test('epic boss visibility requires living objective and local team sight',()=>{
+  const match=new BattlefieldMatch();
+  match.elapsed=EPIC_OBJECTIVES.dragon.firstSpawn;
+  match.objectives.step(match.elapsed);
+  const dragon=match.objectives.objective('dragon');
+  const actor=match.members[0];
+  actor.hero.x=dragon.x+20;actor.hero.y=dragon.y;
+  match.refreshVision();
+  assert.equal(match.canSee('blue',dragon),true);
+  dragon.defeat(match.elapsed);
+  assert.equal(match.canSee('blue',dragon),false);
+});
