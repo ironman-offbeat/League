@@ -20,8 +20,8 @@ export const EPIC_OBJECTIVES={
 } as const satisfies Record<EpicObjectiveKind,EpicObjectiveDefinition>;
 
 export const EPIC_COMBAT={
-  dragon:{hp:2500,armor:35,magicResist:30},
-  baron:{hp:6500,armor:55,magicResist:45},
+  dragon:{hp:2500,armor:35,magicResist:30,attack:130,interval:1.5,range:78,speed:65,leash:340,resetSpeed:140,homeRadius:8},
+  baron:{hp:6500,armor:55,magicResist:45,attack:220,interval:1.6,range:105,speed:48,leash:380,resetSpeed:130,homeRadius:10},
 } as const;
 
 export class EpicObjective implements Target {
@@ -76,6 +76,18 @@ export class EpicObjective implements Target {
     this.nextSpawnAt=definition.firstSpawn;
   }
 
+  clearAggro(){
+    this.aggro=null;
+    this.alert=0;
+    this.attackCooldown=0;
+  }
+
+  restoreAtHome(){
+    // Invalidates stale target-generation projectiles and DoT on leash reset.
+    this.generation++;
+    this.resetCombat();
+  }
+
   private resetCombat(){
     this.x=this.point.x;this.y=this.point.y;this.hp=this.maxHp;
     this.lastDamager=null;
@@ -92,7 +104,7 @@ export class EpicObjective implements Target {
   }
 
   step(time:number,dt=0){
-    if(!Number.isFinite(time)||time<0)throw new Error('epic objective time must be finite and nonnegative');
+    if(!Number.isFinite(time)||time<0||!Number.isFinite(dt)||dt<0)throw new Error('epic objective time and step must be finite and nonnegative');
     this.time=time;
     if(this.alive){
       tickStatus(this,dt);
