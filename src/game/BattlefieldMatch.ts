@@ -141,8 +141,8 @@ export class BattlefieldMatch extends Squad {
       this.units.push(this.createUnit(team,null,'nexus',battlefieldFountain(team)));
     }
 
-    this.enemies.push(...this.units.filter(unit=>unit.team==='red'),...this.jungle.camps);
-    this.redTargets.push(...this.units.filter(unit=>unit.team==='blue'),...this.jungle.camps);
+    this.enemies.push(...this.units.filter(unit=>unit.team==='red'),...this.jungle.camps,...this.objectives.objectives);
+    this.redTargets.push(...this.units.filter(unit=>unit.team==='blue'),...this.jungle.camps,...this.objectives.objectives);
 
     this.members=CHAMPIONS.map(profile=>this.createChampion(profile,'blue',this.enemies));
     const blueTargets=this.members.map(championTarget);
@@ -564,7 +564,7 @@ export class BattlefieldMatch extends Squad {
     const previous=this.elapsed;
     this.elapsed+=dt;
     this.jungle.step(this.elapsed,dt);
-    this.objectives.step(this.elapsed);
+    this.objectives.step(this.elapsed,dt);
     while(this.nextWave<=this.elapsed+1e-8){
       if(this.nextWave>=previous-1e-8)this.spawnWave();
       this.nextWave+=BATTLEFIELD.waveInterval;
