@@ -17,6 +17,9 @@ function battlefield(kind:EpicObjectiveKind='dragon'){
   const blue=match.members.find(a=>a.visualId==='renekton')!;
   const red=match.opponents.find(a=>a.visualId==='renekton')!;
   for(const actor of [blue,red]){
+    // Isolate neutral-boss behavior: do not let the opposite champions
+    // auto-fight each other and splash an unintended hit onto the boss.
+    actor.autoTargetAllowed=()=>false;
     actor.hero.x=boss.point.x+35;actor.hero.y=boss.point.y;
     actor.anchor={x:actor.hero.x,y:actor.hero.y};
   }
