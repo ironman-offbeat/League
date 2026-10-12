@@ -311,7 +311,20 @@ export class ArenaScene extends Phaser.Scene {
         g.lineStyle(2,0xffdf9c);g.strokeCircle(camp.x,camp.y,35);
       }
     }
-    const liveIds=new Set([...match.units.map(u=>u.id),...match.jungle.camps.map(c=>c.id),...match.actors.map(c=>c.profile.id)]);
+    for(const boss of match.objectives.objectives){
+      if(!boss.alive||!match.canSee('blue',boss))continue;
+      const color=boss.objectiveKind==='dragon'?0xdd8a55:0xb37bd6;
+      g.fillStyle(0x112019,.75);g.fillEllipse(boss.x+4,boss.y+24,110,34);
+      g.fillStyle(color,.2);g.fillCircle(boss.x,boss.y,43);
+      g.lineStyle(5,color,.95);g.strokeCircle(boss.x,boss.y,38);
+      g.fillStyle(color,.8);g.fillCircle(boss.x,boss.y,24);
+      g.fillStyle(0x132720);g.fillRect(boss.x-46,boss.y-58,92,7);
+      g.fillStyle(color);g.fillRect(boss.x-45,boss.y-57,90*boss.hp/boss.maxHp,5);
+      if(this.combat.command.kind==='attack'&&this.combat.command.targetId===boss.id){
+        g.lineStyle(2,0xffdf9c);g.strokeCircle(boss.x,boss.y,48);
+      }
+    }
+    const liveIds=new Set([...match.units.map(u=>u.id),...match.jungle.camps.map(c=>c.id),...match.objectives.objectives.map(o=>o.id),...match.actors.map(c=>c.profile.id)]);
     for(const id of this.lastPositions.keys())if(!liveIds.has(id))this.lastPositions.delete(id);
   }
 
