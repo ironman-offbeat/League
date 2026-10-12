@@ -13,8 +13,9 @@ function battlefield(kind:EpicObjectiveKind='dragon'){
   match.elapsed=EPIC_OBJECTIVES[kind].firstSpawn;
   match.objectives.step(match.elapsed);
   const boss=match.objectives.objective(kind);
-  const blue=match.members.find(a=>a.visualId==='amumu')!;
-  const red=match.opponents.find(a=>a.visualId==='amumu')!;
+  // Avoid passive Amumu aura damage in tests of neutral proximity.
+  const blue=match.members.find(a=>a.visualId==='renekton')!;
+  const red=match.opponents.find(a=>a.visualId==='renekton')!;
   for(const actor of [blue,red]){
     actor.hero.x=boss.point.x+35;actor.hero.y=boss.point.y;
     actor.anchor={x:actor.hero.x,y:actor.hero.y};
