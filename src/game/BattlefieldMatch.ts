@@ -25,6 +25,8 @@ import type { LaneId, NavigationTeam } from './navigation.ts';
 import { BattlefieldAI } from './BattlefieldAI.ts';
 import { JUNGLE, JungleCamp, JungleState } from './Jungle.ts';
 import { EpicObjectiveState, EPIC_COMBAT } from './EpicObjectives.ts';
+import type { EpicObjective } from './EpicObjectives.ts';
+import { EpicTeamRewards, EPIC_REWARDS } from './EpicRewards.ts';
 import { stepNeutralMonster } from './NeutralMonsterCombat.ts';
 
 export type BattlefieldTeam=NavigationTeam;
@@ -119,6 +121,7 @@ export class BattlefieldMatch extends Squad {
   ai:BattlefieldAI[]=[];
   readonly jungle=new JungleState();
   readonly objectives=new EpicObjectiveState();
+  readonly epicRewards={blue:new EpicTeamRewards(),red:new EpicTeamRewards()};
   readonly vision=new TeamVision(RULES.world.width,RULES.world.height,BATTLEFIELD_BUSHES,BATTLEFIELD.vision.cell);
   private exposedUntil=new Map<string,number>();
   private petExposedUntil=new Map<string,number>();
@@ -156,6 +159,7 @@ export class BattlefieldMatch extends Squad {
     this.enemies.push(...redTargets);
 
     for(const camp of this.jungle.camps)camp.onDeath=()=>this.rewardJungleCamp(camp);
+    for(const objective of this.objectives.objectives)objective.onDeath=()=>this.rewardEpicObjective(objective);
 
     for(const actor of this.actors){
       const team=this.teamOf(actor);
@@ -208,6 +212,24 @@ export class BattlefieldMatch extends Squad {
     if(!eligible.length)return;
     const share=JUNGLE.reward.xp/eligible.length;
     for(const actor of eligible)actor.gainExperience(share);
+  }
+
+  private rewardEpicObjective(objective:EpicObjective){
+    if(this.result||!objective.lastDamager)return;
+    const killer=this.actors.find(actor=>actor.profile.id===objective.lastDamager);
+    if(!killer)return;
+    const team=this.teamOf(killer);
+    const reward=EPIC_REWARDS[objective.objectiveKind];
+    this.economy[team].add(reward.gold);
+    this.epicRewards[team].grant(objective.objectiveKind,this.elapsed);
+    const eligible=this.teamMembers(team).filter(actor=>
+      actor.alive&&!actor.progression.capped&&
+      distance(actor.hero,objective)<=PROGRESSION.rewardRange
+    );
+    if(eligible.length){
+      const share=reward.xp/eligible.length;
+      for(const actor of eligible)actor.gainExperience(share);
+    }
   }
 
   shopReason(actor:Combat,item:Purchase){
