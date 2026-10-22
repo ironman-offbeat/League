@@ -160,6 +160,10 @@ test('Baron nearby minions inflict 40% more building damage, expiring back to ba
   match.nextWave=Infinity;
   const minion=match.minions('blue','top').find(u=>u.role==='melee')!;
   const building=match.structure('red','outer','top');
+  // Isolate a building-only attack: otherwise the first wave's enemy minions
+  // correctly take priority over structures and no structure damage occurs.
+  for(const enemy of match.minions('red','top'))enemy.alive=false;
+  for(const enemy of match.opponents)Object.assign(enemy.hero,{x:-1000,y:-1000});
   slay(match,'baron',match.members[0]);
   for(const c of match.members)Object.assign(c.hero,{x:-1000,y:-1000});
   Object.assign(match.members[0].hero,{x:building.x,y:building.y});
