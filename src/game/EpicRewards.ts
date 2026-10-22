@@ -1,10 +1,15 @@
 import type { EpicObjectiveKind } from './EpicObjectives.ts';
 
-// Prototype rewards. Team-level effects are represented here and applied to
-// gameplay in the follow-up combat/economy phase.
+// Match-local epic reward state and the combat tuning applied by 09e-4b.
 export const EPIC_REWARDS={
   dragon:{gold:150,xp:300},
   baron:{gold:350,xp:600,duration:180},
+} as const;
+
+// Percent modifiers are additive within each effect, not exponentially compounded.
+export const EPIC_EFFECTS={
+  dragon:{damagePerStack:.04,healthPerStack:.04},
+  baron:{championDamage:.15,minionDamageReduction:.25,buildingDamage:.40},
 } as const;
 
 // Instances belong to one BattlefieldMatch. No global mutable buff state.

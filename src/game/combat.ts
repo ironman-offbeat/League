@@ -14,6 +14,7 @@ import { RULES, distance, clampPoint } from './config.ts';
 import type { Point } from './config.ts';
 import { Progression, PROGRESSION } from './progression.ts';
 import { JungleBuffs } from './JungleBuffs.ts';
+import { EPIC_EFFECTS } from './EpicRewards.ts';
 import type { JungleBuff } from './Jungle.ts';
 
 export type Command = { kind: 'idle' } | { kind: 'move'; point: Point } | { kind: 'attack'; targetId: string; generation:number; point:Point } | { kind:'attackMove';point:Point } | { kind: 'recall'; remaining: number };
@@ -34,11 +35,31 @@ export class Combat {
   progression=new Progression();
   equipment=new Equipment();
   readonly buffs=new JungleBuffs();
+  // Dragon belongs to the team for the entire match; Baron belongs to living
+  // champions at capture and is lost on death (but not re-granted on respawn).
+  dragonStacks=0;
+  baronRemaining=0;
+  get baseHealth(){return this.profile.stats.hp+this.profile.growth.hp*(this.progression.level-1)+EQUIPMENT.health[this.equipment.armor];}
+  get dragonHealthMultiplier(){return 1+this.dragonStacks*EPIC_EFFECTS.dragon.healthPerStack;}
+  get baronActive(){return this.alive&&this.baronRemaining>0;}
+  gainBaseHealth(base:number){
+    const delta=base*this.dragonHealthMultiplier;
+    this.hero.maxHp+=delta;
+    if(this.alive)this.hero.hp+=delta;
+  }
+  grantDragonStack(){
+    // The newly added 4% uses current base health, not already-buffed max HP.
+    const delta=this.baseHealth*EPIC_EFFECTS.dragon.healthPerStack;
+    this.dragonStacks++;
+    this.hero.maxHp+=delta;
+    if(this.alive)this.hero.hp+=delta;
+  }
+  grantBaron(duration:number){if(this.alive&&Number.isFinite(duration)&&duration>0)this.baronRemaining=duration;}
   get ranks(){return skillRanks(this.profile.kit,this.progression.level,this.progression.enabled);}
   get furySkills(){return rankedFury(this.ranks,this.stats.attack);}
   get abilityPower(){return ['flame','curse'].includes(this.profile.kit)?EQUIPMENT.magical[this.equipment.weapon]:0;}
   get weaponAttack(){return ['fury','frost'].includes(this.profile.kit)?EQUIPMENT.physical[this.equipment.weapon]:0;}
-  initializeEquipment(){this.equipment.initialize();this.hero.maxHp+=EQUIPMENT.health[1];this.hero.hp+=EQUIPMENT.health[1];}
+  initializeEquipment(){this.equipment.initialize();this.gainBaseHealth(EQUIPMENT.health[1]);}
   grantJungleBuff(kind:JungleBuff){if(this.alive)this.buffs.grant(kind);}
   usePotion(){
     const e=this.equipment;if(!this.canAct||!e.potion||e.active)return false;
@@ -46,15 +67,15 @@ export class Combat {
     if(!(p.hp&&this.hero.hp<this.hero.maxHp)&&!(p.mana&&this.hero.mana<this.maxMana))return false;
     e.active={remaining:EQUIPMENT.duration,hpPerSecond:this.hero.maxHp*p.hp/EQUIPMENT.duration,manaPerSecond:this.maxMana*p.mana/EQUIPMENT.duration,healed:0};e.potion=null;return true;
   }
-  get stats(){const n=this.progression.level-1;return {...this.profile.stats,hp:this.profile.stats.hp+this.profile.growth.hp*n+EQUIPMENT.health[this.equipment.armor],attack:this.profile.stats.attack+this.profile.growth.attack*n+this.weaponAttack,attackInterval:this.profile.stats.attackInterval/(1+n*PROGRESSION.attackSpeedPerLevel)};}
+  get stats(){const n=this.progression.level-1;return {...this.profile.stats,hp:this.baseHealth*this.dragonHealthMultiplier,attack:this.profile.stats.attack+this.profile.growth.attack*n+this.weaponAttack,attackInterval:this.profile.stats.attackInterval/(1+n*PROGRESSION.attackSpeedPerLevel)};}
   get maxMana(){return this.profile.mana+this.profile.growth.mana*(this.progression.level-1);}
   get armor(){return this.profile.armor+this.profile.growth.armor*(this.progression.level-1)+EQUIPMENT.defense[this.equipment.armor];}
   get magicResist(){return this.profile.magicResist+this.profile.growth.magicResist*(this.progression.level-1)+EQUIPMENT.defense[this.equipment.armor];}
   gainExperience(amount:number){
     const gained=this.progression.gain(amount);if(!gained)return;
-    const health=this.profile.growth.hp*gained,mana=this.profile.growth.mana*gained;
-    this.hero.maxHp+=health;
-    if(this.alive){this.hero.hp+=health;this.hero.mana=Math.min(this.maxMana,this.hero.mana+mana);}
+    const mana=this.profile.growth.mana*gained;
+    this.gainBaseHealth(this.profile.growth.hp*gained);
+    if(this.alive)this.hero.mana=Math.min(this.maxMana,this.hero.mana+mana);
     this.events.push({kind:'levelUp',point:{x:this.hero.x,y:this.hero.y},amount:this.progression.level,entityId:this.profile.id,visual:'level.up'});
   }
   autoTargetAllowed:(target:Dummy)=>boolean=()=>true;
@@ -91,7 +112,7 @@ export class Combat {
       if(this.ultimateRemaining>0)this.hero.maxHp-=this.ultimateHealth;
       this.ultimateHealth=0;this.equipment.active=null;
       this.ultimateRemaining=0;this.hero.shield=0;this.hero.shieldRemaining=0;this.hero.fury=0;
-      this.abilities.reset();this.buffs.clear();Object.assign(this.hero,freshStatus());
+      this.abilities.reset();this.buffs.clear();this.baronRemaining=0;Object.assign(this.hero,freshStatus());
       this.onDeath?.();
     }else this.abilities.onDamage();
     return lost;
@@ -184,6 +205,7 @@ export class Combat {
   cancelRecall() { if (this.command.kind === 'recall') this.command = { kind: 'idle' }; }
   step(dt: number, updateEnemies = true) {
     this.elapsed += dt;
+    this.baronRemaining=Math.max(0,this.baronRemaining-dt);
     const skillSpeed=this.buffs.skillCooldownSpeed;
     for (const key of Object.keys(this.cooldown) as (keyof typeof this.cooldown)[])
       this.cooldown[key] = Math.max(0,this.cooldown[key]-dt*(key==='attack'?1:skillSpeed));
@@ -372,7 +394,8 @@ export class Combat {
   hurt(target: Dummy, raw: number, source: string, show = true, type:DamageType='physical', kind:HitKind='skill', exposeSource=true) {
     if(!target.alive||target.protected||(target.kind==='building'&&kind!=='basic'))return;
     if(raw>0){if(exposeSource)this.offensiveAction();target.alert=SKILLS.retaliation.alert;target.aggro=this.profile.id;this.lastCombat=this.elapsed;}
-    const amount=damageTarget(target,raw*(type==='magic'&&target.marked>0?1+SKILLS.curse.passive.amplify:1),type,kind,show);
+    const epicMultiplier=1+this.dragonStacks*EPIC_EFFECTS.dragon.damagePerStack+(this.baronActive?EPIC_EFFECTS.baron.championDamage:0);
+    const amount=damageTarget(target,(raw>0?raw*epicMultiplier:raw)*(type==='magic'&&target.marked>0?1+SKILLS.curse.passive.amplify:1),type,kind,show);
     if(!amount)return;
     this.damage += amount; this.lastCombat = this.elapsed;
     if (show&&!target.receiveDamage) this.events.push({ kind: 'damage', point: { x: target.x, y: target.y-40 }, amount, source, visual:`hit.${type}` });
