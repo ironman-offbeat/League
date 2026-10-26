@@ -29,7 +29,7 @@ scene.onFrame=s=>{
   updateShop();
   el('mode').textContent=match?'연습장으로':'3라인 경기';
   el('session-name').textContent=s.battlefield?'3라인 전장':match?'한 라인 공성':'조작 연습장';
-  el('retaliation').hidden=!!match;el('training-objectives').hidden=!!match;el('match-hud').hidden=!match;
+  el('retaliation').hidden=!!match;el('training-objectives').hidden=!!match;el('match-hud').hidden=!match;el('epic-status').hidden=!s.battlefield;
   el('result-overlay').hidden=!match?.result;
   if(match){
     const time=`${Math.floor(match.elapsed/60).toString().padStart(2,'0')}:${Math.floor(match.elapsed%60).toString().padStart(2,'0')}`;
@@ -42,6 +42,9 @@ scene.onFrame=s=>{
       const inhibitorsAlive=lanes.filter(lane=>s.battlefield!.structure('red','inhibitor',lane).alive).length;
       el('match-objective').textContent=`적 외곽 타워 ${outerAlive}/3 · 억제기 ${inhibitorsAlive}/3 · 넥서스 ${Math.ceil(red.hp)}`;
       el('match-wave').textContent=`처치 ${match.kills.blue} : ${match.kills.red} · 아군 넥서스 ${Math.ceil(blue.hp)} · ${match.wave}차 3라인 웨이브 · 증원 ${Math.max(0,Math.ceil(match.nextWave-match.elapsed))}초`;
+      const epic=s.battlefield.epicRewards;
+      const baronTime=(team:'blue'|'red')=>epic[team].hasBaron(match.elapsed)?`${Math.ceil(epic[team].baronRemaining(match.elapsed))}초`:'없음';
+      el('epic-status').textContent=`드래곤 아군 ${epic.blue.dragonStacks} / 적군 ${epic.red.dragonStacks} · 바론 아군 ${baronTime('blue')} / 적군 ${baronTime('red')}`;
     }else if(s.laneMatch){
       const tower=s.laneMatch.structure('red','tower'),blue=s.laneMatch.structure('blue','nexus'),red=s.laneMatch.structure('red','nexus');
       el('match-objective').textContent=tower.alive?`적 타워 ${Math.ceil(tower.hp)} · 미니언과 함께 공성`:`적 넥서스 ${Math.ceil(red.hp)} · 파괴하면 승리`;
@@ -51,7 +54,7 @@ scene.onFrame=s=>{
   }
   const fury=c.profile.kit==='fury';
   el('champion-name').textContent=c.profile.name;
-  el('champion-status').textContent=`Lv. ${c.progression.level}${c.profile.kit==='flame'?` · 불꽃 ${c.abilities.stacks}/3`:''}${c.buffs.red>0?` · 레드 ${Math.ceil(c.buffs.red)}초`:''}${c.buffs.blue>0?` · 블루 ${Math.ceil(c.buffs.blue)}초`:''}`;
+  el('champion-status').textContent=`Lv. ${c.progression.level}${c.profile.kit==='flame'?` · 불꽃 ${c.abilities.stacks}/3`:''}${c.buffs.red>0?` · 레드 ${Math.ceil(c.buffs.red)}초`:''}${c.buffs.blue>0?` · 블루 ${Math.ceil(c.buffs.blue)}초`:''}${c.dragonStacks?` · 드래곤 ${c.dragonStacks}`:''}${c.baronActive?` · 바론 ${Math.ceil(c.baronRemaining)}초`:''}`;
   el('xp-track').hidden=!match;
   el('xp-bar').style.width=`${c.progression.capped?100:c.progression.xp/c.progression.required*100}%`;
   el('xp-text').textContent=c.progression.capped?'최대 레벨':`XP ${Math.floor(c.progression.xp)} / ${c.progression.required}`;
@@ -67,7 +70,7 @@ scene.onFrame=s=>{
     b.querySelector('small')!.textContent=m.alive?`HP ${Math.ceil(m.hero.hp)} · ${names[m.command.kind]}`:`부활 ${Math.ceil(m.respawnRemaining)}초`;
   });
   el('hp-bar').style.width=`${c.hero.hp/c.hero.maxHp*100}%`;
-  el('hp-text').textContent=`${Math.ceil(c.hero.hp)} / ${c.hero.maxHp}`;
+  el('hp-text').textContent=`${Math.ceil(c.hero.hp)} / ${Math.ceil(c.hero.maxHp)}`;
   el('fury-bar').style.background=fury?'#bc8b3c':'#5a9fce';
   el('fury-bar').style.width=`${fury?c.hero.fury:c.hero.mana/c.maxMana*100}%`;
   el('fury-text').textContent=fury?`분노 ${Math.floor(c.hero.fury)} / 100`:`마나 ${Math.floor(c.hero.mana)} / ${c.maxMana}`;

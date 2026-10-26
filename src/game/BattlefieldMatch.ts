@@ -26,7 +26,7 @@ import { BattlefieldAI } from './BattlefieldAI.ts';
 import { JUNGLE, JungleCamp, JungleState } from './Jungle.ts';
 import { EpicObjectiveState, EPIC_COMBAT } from './EpicObjectives.ts';
 import type { EpicObjective } from './EpicObjectives.ts';
-import { EpicTeamRewards, EPIC_REWARDS } from './EpicRewards.ts';
+import { EpicTeamRewards, EPIC_REWARDS, EPIC_EFFECTS } from './EpicRewards.ts';
 import { stepNeutralMonster } from './NeutralMonsterCombat.ts';
 
 export type BattlefieldTeam=NavigationTeam;
@@ -222,6 +222,12 @@ export class BattlefieldMatch extends Squad {
     const reward=EPIC_REWARDS[objective.objectiveKind];
     this.economy[team].add(reward.gold);
     this.epicRewards[team].grant(objective.objectiveKind,this.elapsed);
+    if(objective.objectiveKind==='dragon'){
+      for(const actor of this.teamMembers(team))actor.grantDragonStack();
+    }else{
+      const duration=this.epicRewards[team].baronRemaining(this.elapsed);
+      for(const actor of this.teamMembers(team))actor.grantBaron(duration);
+    }
     const eligible=this.teamMembers(team).filter(actor=>
       actor.alive&&!actor.progression.capped&&
       distance(actor.hero,objective)<=PROGRESSION.rewardRange
@@ -254,8 +260,7 @@ export class BattlefieldMatch extends Squad {
       const before=EQUIPMENT.health[actor.equipment.armor];
       actor.equipment.armor++;
       const delta=EQUIPMENT.health[actor.equipment.armor]-before;
-      actor.hero.maxHp+=delta;
-      if(actor.alive)actor.hero.hp+=delta;
+      actor.gainBaseHealth(delta);
     }else actor.equipment.potion=item;
     return true;
   }
@@ -280,6 +285,13 @@ export class BattlefieldMatch extends Squad {
 
   minions(team?:BattlefieldTeam,lane?:LaneId){
     return this.units.filter(unit=>unit.kind==='minion'&&(!team||unit.team===team)&&(!lane||unit.lane===lane));
+  }
+
+  baronEmpowersMinion(unit:BattlefieldUnit){
+    if(unit.kind!=='minion'||!unit.alive||!this.epicRewards[unit.team].hasBaron(this.elapsed))return false;
+    return this.teamMembers(unit.team).some(actor=>
+      actor.baronActive&&distance(actor.hero,unit)<=BATTLEFIELD.supportRange
+    );
   }
 
   private targetTeam(target:Target):BattlefieldTeam|null{
@@ -427,6 +439,11 @@ export class BattlefieldMatch extends Squad {
       nexus.protected=LANES.every(lane=>this.structure(team,'inhibitor',lane).alive);
       nexus.damageScale=this.supported(nexus,team==='blue'?'red':'blue')?1:.25;
     }
+    // Live aura lookup: newly spawned minions gain protection only near a living
+    // Baron bearer, and it disappears immediately on death, exit or expiration.
+    for(const unit of this.units)if(unit.kind==='minion'&&unit.alive){
+      unit.damageScale=this.baronEmpowersMinion(unit)?1-EPIC_EFFECTS.baron.minionDamageReduction:1;
+    }
   }
 
   private spawnWave(){
@@ -532,7 +549,8 @@ export class BattlefieldMatch extends Squad {
       return;
     }
     if(d<=stats.range&&unit.attackCooldown<=0){
-      hits.push({target,damage:stats.attack});
+      const empowered=target.unit?.kind==='building'&&this.baronEmpowersMinion(unit);
+      hits.push({target,damage:stats.attack*(empowered?1+EPIC_EFFECTS.baron.buildingDamage:1)});
       unit.attackCooldown=stats.interval;
     }
   }
