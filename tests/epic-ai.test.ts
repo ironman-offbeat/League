@@ -75,6 +75,9 @@ test('Baron requires a group, chooses safe participants and supports both sides'
   assert.equal(plan.minimum,3);
   assert.ok(plan.participants.length>=3);
   assert.equal(plan.pathIds.at(-1),boss.definition.nodeId);
+  // Test the other team independently; visible enemy contest should not
+  // be confused with lack of a symmetric friendly planning route.
+  for(const red of m.opponents)Object.assign(red.hero,{x:1460,y:160});
   side(m,'baron','blue');
   const blue=chooseEpicPlan(ctx(m,m.members[0],'blue'));
   assert.ok(blue);assert.equal(blue.objective.id,'baron');
@@ -164,7 +167,7 @@ test('low-HP contested objective can be stolen using existing last-hit reward lo
   for(const blue of m.members)Object.assign(blue.hero,{x:100,y:920});
   const blue=m.members[0];
   blue.hero.x=boss.x+180;blue.hero.y=boss.y;
-  blue.hurt(boss,boss.maxHp*.8,'blue opening',false,'physical','basic');
+  blue.hurt(boss,boss.maxHp*1.05,'blue opening',false,'physical','basic');
   assert.ok(boss.hp/boss.maxHp<=EPIC_AI_RULES.stealThreshold);
   m.refreshVision();
   const red=reds[0],brain=m.ai[0];
