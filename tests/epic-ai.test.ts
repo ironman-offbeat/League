@@ -109,7 +109,8 @@ test('AI issues an ordinary boss target order only when enough teammates are at 
   assert.equal(brain.state,'epic-fight');
   assert.equal(brain.actor.command.kind,'attack');
   if(brain.actor.command.kind==='attack')assert.equal(brain.actor.command.targetId,boss.id);
-  for(const actor of members.slice(1))Object.assign(actor.hero,{x:1420,y:180});
+  // Losing healthy teammates, not merely having distant allies, forces withdrawal.
+  for(const actor of members.slice(1))actor.hero.hp=actor.hero.maxHp*.1;
   m.refreshVision();
   brain.step(BATTLEFIELD_AI_RULES.interval);
   assert.equal(brain.state,'epic-withdraw');
@@ -199,4 +200,28 @@ test('loss of Dragon vision immediately cancels a previously issued attack order
   brain.step(BATTLEFIELD_AI_RULES.interval);
   assert.equal(brain.state,'epic-withdraw');
   assert.notEqual(brain.actor.command.kind,'attack');
+});
+
+test('unsupported live enemy tower near the objective blocks a boss pull',()=>{
+  const {m,boss}=spawn('dragon');
+  side(m,'dragon');
+  const tower=m.structure('blue','outer','mid');
+  Object.assign(tower,{alive:true,x:boss.x+30,y:boss.y});
+  m.refreshVision();
+  const brain=m.ai[0];
+  brain.step(BATTLEFIELD_AI_RULES.interval);
+  assert.equal(brain.state,'retreat');
+  assert.notEqual(brain.actor.command.kind,'attack');
+});
+
+test('four-player autonomous Baron finish grants the temporary team buff through standard combat',()=>{
+  const {m,boss}=spawn('baron');
+  side(m,'baron');
+  for(const blue of m.members)Object.assign(blue.hero,{x:100,y:920});
+  boss.hp=440;
+  m.refreshVision();
+  for(let i=0;i<Math.round(30/RULES.step)&&boss.alive&&!m.result;i++)m.step(RULES.step);
+  assert.equal(boss.alive,false,'Baron AI failed to complete the group objective');
+  assert.ok(m.epicRewards.red.hasBaron(m.elapsed));
+  assert.equal(m.epicRewards.blue.hasBaron(m.elapsed),false);
 });
