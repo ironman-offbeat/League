@@ -14,6 +14,11 @@ const step=(m:BattlefieldMatch,seconds:number)=>{
 function spawn(kind:Kind,ai=true){
   const m=new BattlefieldMatch({ai});
   m.nextWave=Infinity;
+  // A live outer tower covers part of each river pit in the prototype map.
+  // Isolate safe post-siege boss strategy from the separate tower-avoidance
+  // regression; otherwise the correct action is to withdraw, not pull.
+  for(const structure of m.structures())if(structure.role==='outer')structure.alive=false;
+  m.refreshVision();
   m.elapsed=EPIC_OBJECTIVES[kind].firstSpawn;
   m.objectives.step(m.elapsed);
   return {m,boss:m.objectives.objective(kind)};
