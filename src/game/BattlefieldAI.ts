@@ -18,6 +18,10 @@ import type { LaneId } from './navigation.ts';
 import { chooseJungleCampForBuffs, chooseJungleAssist, chooseJungleInvade, jungleSafeRoute, JUNGLE_AI_RULES, JUNGLE_INVADE_RULES } from './JunglePlanning.ts';
 import type { JungleCampPlan } from './JunglePlanning.ts';
 import type { JungleLaneSignal } from './JunglePlanning.ts';
+import { chooseEpicPlan, epicScoutRoute, EPIC_AI_RULES } from './EpicPlanning.ts';
+import type { EpicPlan } from './EpicPlanning.ts';
+import { EPIC_OBJECTIVES } from './EpicObjectives.ts';
+import type { EpicObjectiveKind } from './EpicObjectives.ts';
 
 export const BATTLEFIELD_AI_RULES={
   interval:.3,
@@ -35,7 +39,7 @@ export const BATTLEFIELD_AI_RULES={
   jungleFinishMinimumHP:.1,
 } as const;
 
-export type BattlefieldAIState='waiting'|'advance'|'fight'|'patrol'|'river-patrol'|'lane-assist'|'camp-approach'|'camp-fight'|'invade-approach'|'invade-fight'|'invade-withdraw'|'retreat'|'recall'|'recover'|'dead';
+export type BattlefieldAIState='waiting'|'advance'|'fight'|'patrol'|'river-patrol'|'lane-assist'|'camp-approach'|'camp-fight'|'invade-approach'|'invade-fight'|'invade-withdraw'|'epic-scout'|'epic-rally'|'epic-fight'|'epic-steal'|'epic-withdraw'|'retreat'|'recall'|'recover'|'dead';
 
 const LANE_ROLES:readonly LaneId[]=['top','mid','bottom'];
 const RIVER_PATROL:Record<BattlefieldTeam,readonly string[]>={
@@ -56,6 +60,13 @@ export class BattlefieldAI {
   private invadedCampId:string|null=null;
   private invadeRetryAt=0;
   private invadeWithdrawing=false;
+  private epicKind:EpicObjectiveKind|null=null;
+  private scoutKind:EpicObjectiveKind|null=null;
+  private epicRetryAt=0;
+  private nextScoutAt:Record<EpicObjectiveKind,number>={
+    dragon:EPIC_OBJECTIVES.dragon.firstSpawn,
+    baron:EPIC_OBJECTIVES.baron.firstSpawn,
+  };
   readonly actor:Combat;
   readonly role:BattlefieldRole;
   private readonly match:BattlefieldMatch;
@@ -102,6 +113,11 @@ export class BattlefieldAI {
     if((hp<BATTLEFIELD_AI_RULES.retreatHP&&!finishableCamp)||(c.maxMana>0&&mana<.12))this.recovering=true;
 
     if(this.recovering){
+      if(this.epicKind){
+        this.epicKind=null;
+        this.epicRetryAt=Math.max(this.epicRetryAt,m.elapsed+EPIC_AI_RULES.retryDelay);
+      }
+      this.scoutKind=null;
       if(this.role==='jungle'&&(this.invadedCampId||this.invadeWithdrawing)){
         this.invadedCampId=null;
         this.invadeWithdrawing=false;
@@ -135,6 +151,11 @@ export class BattlefieldAI {
 
     const dangerous=this.dangerousTowerAt(c.hero,team);
     if(dangerous){
+      if(this.epicKind){
+        this.abandonEpic(team);
+        return;
+      }
+      this.scoutKind=null;
       if(this.role==='jungle'&&this.invadedCampId){
         this.cancelInvasion(team);
         return;
@@ -170,9 +191,45 @@ export class BattlefieldAI {
     const hostileHeroes=local.filter(target=>target.kind==='champion');
     const allies=m.teamMembers(team).filter(actor=>actor.alive&&distance(actor.hero,c.hero)<=BATTLEFIELD_AI_RULES.engage);
     if(hostileHeroes.length>allies.length+1){
+      if(this.epicKind){
+        this.abandonEpic(team);
+        return;
+      }
       this.state='retreat';
       if(this.role==='jungle')this.move(this.jungleRetreatPoint(team));
       else this.move(m.laneAdvance(team,this.role,c.hero,-180,false));
+      return;
+    }
+
+    // Coordinate boss hunts BEFORE normal minion targeting, so an ongoing
+    // Dragon/Baron attack cannot be interrupted by incidental lane waves.
+    // Reevaluate with fresh team vision every decision tick.
+    const epic=m.elapsed>=this.epicRetryAt?chooseEpicPlan({
+      team,actor:c,allies:m.teamMembers(team),objectives:m.objectives.objectives,
+      visibleEnemies:this.visibleEnemyHeroes(team),
+      canSeeObjective:objective=>m.canSee(team,objective),
+      safeFromTowers:point=>!this.dangerousTowerAt(point,team),
+    }):null;
+    if(this.epicKind){
+      if(!epic||epic.objective.id!==this.epicKind){
+        this.abandonEpic(team);
+        return;
+      }
+      this.followEpic(epic);
+      return;
+    }
+    // Avoid abandoning a half-cleared home camp for a routine boss hunt.
+    const engagedHome=this.role==='jungle'&&m.jungle.camps.some(camp=>
+      camp.id===this.selectedCampId&&camp.aggro===c.profile.id&&
+      camp.alive&&camp.hp/camp.maxHp<.6
+    );
+    if(epic&&(!engagedHome||epic.mode==='steal')){
+      if(this.role==='jungle'){
+        this.selectedCampId=null;
+        this.invadedCampId=null;
+        this.invadeWithdrawing=false;
+      }
+      this.followEpic(epic);
       return;
     }
 
@@ -224,6 +281,7 @@ export class BattlefieldAI {
 
   private stepJungle(team:BattlefieldTeam){
     const c=this.actor,m=this.match;
+    if(this.scoutKind&&this.stepEpicScout(team))return;
     const buffs={red:c.buffs.red,blue:c.buffs.blue};
     const plan=chooseJungleCampForBuffs(c.hero,team,m.jungle.camps,buffs,this.selectedCampId);
     const engaged=plan&&plan.camp.aggro===c.profile.id;
@@ -257,6 +315,7 @@ export class BattlefieldAI {
       return;
     }
     this.selectedCampId=null;
+    if(this.stepEpicScout(team))return;
     if(m.elapsed>=this.invadeRetryAt){
       const invasion=this.invasionPlan(team);
       if(invasion){
@@ -270,6 +329,97 @@ export class BattlefieldAI {
     // empty spawn locations while buffs are active or camps await respawn.
     const started=m.jungle.camps.some(camp=>camp.alive||camp.lastDefeatedAt!==null);
     this.stepJunglePatrol(team,started?'river-patrol':'patrol');
+  }
+
+  private visibleEnemyHeroes(team:BattlefieldTeam):Point[]{
+    const enemyTeam:BattlefieldTeam=team==='blue'?'red':'blue';
+    return this.match.teamMembers(enemyTeam).filter(actor=>{
+      const target=this.match.championTargets.find(t=>t.id===actor.profile.id);
+      return !!target&&this.match.canSee(team,target);
+    }).map(actor=>({x:actor.hero.x,y:actor.hero.y}));
+  }
+
+  private followEpic(plan:EpicPlan){
+    const c=this.actor,boss=plan.objective;
+    this.epicKind=boss.objectiveKind;
+    this.scoutKind=null;
+    if(plan.ready<plan.minimum||distance(c.hero,boss)>EPIC_AI_RULES.attackRange){
+      this.state='epic-rally';
+      // Wait for the required group before striking; being in attack range
+      // alone must not accidentally retain a prior monster attack order.
+      if(plan.ready<plan.minimum&&distance(c.hero,boss)<=EPIC_AI_RULES.rallyRadius){
+        if(c.command.kind!=='move'||distance(c.command.point,c.hero)>10)c.move({...c.hero});
+        return;
+      }
+      const nextId=plan.pathIds.length>1?plan.pathIds[1]:null;
+      this.move(nextId?BATTLEFIELD_NAVIGATION.node(nextId).point:boss.point);
+      return;
+    }
+    this.state=plan.mode==='steal'?'epic-steal':'epic-fight';
+    this.attack(boss);
+    this.skills(boss);
+  }
+
+  private abandonEpic(team:BattlefieldTeam){
+    const kind=this.epicKind;
+    this.epicKind=null;
+    this.scoutKind=null;
+    this.epicRetryAt=Math.max(this.epicRetryAt,this.match.elapsed+EPIC_AI_RULES.retryDelay);
+    if(kind)this.nextScoutAt[kind]=Math.max(this.nextScoutAt[kind],this.match.elapsed+EPIC_AI_RULES.scoutCooldown);
+    const goalId=team==='blue'
+      ?kind==='baron'?'blue-jungle-top':'blue-jungle-bottom'
+      :kind==='baron'?'red-jungle-top':'red-jungle-bottom';
+    // The return destination is a friendly jungle waypoint, not a boss.
+    // Follow only a safe first segment, otherwise cancel the attack in place.
+    const path=jungleSafeRoute(this.actor.hero,goalId,
+      point=>!this.dangerousTowerAt(point,team));
+    const next=path?.pathIds.length&&path.pathIds.length>1
+      ?BATTLEFIELD_NAVIGATION.node(path.pathIds[1]).point
+      :path?BATTLEFIELD_NAVIGATION.node(goalId).point:null;
+    this.state='epic-withdraw';
+    this.move(next??{...this.actor.hero});
+  }
+
+  private stepEpicScout(team:BattlefieldTeam):boolean{
+    if(this.role!=='jungle')return false;
+    const m=this.match,c=this.actor;
+    const finish=(kind:EpicObjectiveKind)=>{
+      this.scoutKind=null;
+      this.nextScoutAt[kind]=m.elapsed+EPIC_AI_RULES.scoutCooldown;
+    };
+    if(this.scoutKind){
+      const kind=this.scoutKind;
+      if(m.pointVisible(team,m.objectives.objective(kind).point)){
+        finish(kind);return false;
+      }
+    }else{
+      const hp=c.hero.hp/c.hero.maxHp;
+      const mana=c.maxMana?c.hero.mana/c.maxMana:1;
+      if(hp<EPIC_AI_RULES.scoutHealth||mana<EPIC_AI_RULES.scoutMana)return false;
+      const kind=(['baron','dragon'] as const).find(id=>
+        m.elapsed>=EPIC_OBJECTIVES[id].firstSpawn&&
+        m.elapsed>=this.nextScoutAt[id]&&
+        !m.pointVisible(team,m.objectives.objective(id).point)
+      );
+      if(!kind)return false;
+      this.scoutKind=kind;
+    }
+    const kind=this.scoutKind!;
+    // Only public first-spawn timing and map visibility are used here. The
+    // unseen boss's alive/dead state and respawn timestamp are never queried.
+    const enemies=this.visibleEnemyHeroes(team);
+    const route=epicScoutRoute(c.hero,kind,point=>
+      !this.dangerousTowerAt(point,team)&&!enemies.some(enemy=>
+        distance(point,enemy)<=EPIC_AI_RULES.enemyAvoidRadius
+      )
+    );
+    if(!route){finish(kind);return false;}
+    this.state='epic-scout';
+    const next=route.pathIds.length>1
+      ?BATTLEFIELD_NAVIGATION.node(route.pathIds[1]).point
+      :BATTLEFIELD_NAVIGATION.node(EPIC_OBJECTIVES[kind].nodeId).point;
+    this.move(next);
+    return true;
   }
 
   private invasionPlan(team:BattlefieldTeam):JungleCampPlan|null{
