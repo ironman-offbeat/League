@@ -3,6 +3,8 @@ import { actorVisual, motionFor } from '../render/assets.ts';
 import { LaneMatch, LANE } from './LaneMatch.ts';
 import { BattlefieldMatch, BATTLEFIELD, BATTLEFIELD_BUSHES, BATTLEFIELD_ROLE_BY_CHAMPION } from './BattlefieldMatch.ts';
 import { BATTLEFIELD_NAVIGATION, battlefieldLaneRoute } from './navigation.ts';
+import { EPIC_OBJECTIVES } from './EpicObjectives.ts';
+import type { EpicObjectiveKind } from './EpicObjectives.ts';
 import Phaser from 'phaser';
 import type { SkillSlot } from './skillConfig.ts';
 import { SKILLS } from './skillConfig.ts';
@@ -40,6 +42,7 @@ export class ArenaScene extends Phaser.Scene {
   private labels: Phaser.GameObjects.Text[] = [];
   private gesture: { mode: 'hero' | 'pan' | 'dash'; start: Point; world: Point; camera: Point; pointer: number } | null = null;
   private aim: Point | null = null;
+  private lastEpicRally:{kind:EpicObjectiveKind;elapsed:number}|null=null;
   constructor() { super('arena'); }
   preload(){VisualDirector.preload(this);}
   create() {
@@ -101,6 +104,7 @@ export class ArenaScene extends Phaser.Scene {
     this.cameras.main.centerOn(this.combat.hero.x+100,this.combat.hero.y-25);
   }
   startMode(lane:boolean) {
+    this.lastEpicRally=null;
     this.visuals?.clear();this.lastPositions.clear();this.poses.clear();
     this.squad=lane?new BattlefieldMatch({ai:true}):new Squad(true);
     this.accumulator=0;this.cancelGesture();
@@ -110,6 +114,32 @@ export class ArenaScene extends Phaser.Scene {
     this.notify(lane?'3라인 전장 · 각 챔피언은 자신의 역할 위치에서 시작합니다.':'연습장을 초기화했습니다.');
   }
   restartTraining(){this.startMode(!!this.match);}
+  focusEpic(kind:EpicObjectiveKind){
+    if(!this.battlefield)return false;
+    this.cancelGesture();
+    const point=BATTLEFIELD_NAVIGATION.node(EPIC_OBJECTIVES[kind].nodeId).point;
+    this.cameras.main.setZoom(Math.max(this.battlefieldFitZoom(),.75));
+    this.cameras.main.centerOn(point.x,point.y);
+    return true;
+  }
+  rallyEpic(kind:EpicObjectiveKind){
+    const match=this.battlefield;
+    if(!match||this.blocked)return false;
+    if(this.lastEpicRally?.kind===kind&&match.elapsed-this.lastEpicRally.elapsed<1.5){
+      this.notify('이미 집결 명령을 내렸습니다.');return false;
+    }
+    const center=BATTLEFIELD_NAVIGATION.node(EPIC_OBJECTIVES[kind].nodeId).point;
+    const offsets=[{x:-100,y:0},{x:0,y:-100},{x:100,y:0},{x:0,y:100}];
+    let ordered=0;
+    for(const [index,actor] of match.members.entries()){
+      if(actor.alive&&actor.move({x:center.x+offsets[index].x,y:center.y+offsets[index].y}))ordered++;
+    }
+    if(!ordered){this.notify('집결할 수 있는 생존 챔피언이 없습니다.');return false;}
+    this.lastEpicRally={kind,elapsed:match.elapsed};
+    this.focusEpic(kind);
+    this.notify(`${kind==='dragon'?'드래곤':'바론'} 주변에 ${ordered}명 집결 · 공격은 시야 확보 후 직접 지정하세요.`);
+    return true;
+  }
   rally(){
     if(!this.match||this.blocked)return;
     if(this.battlefield){

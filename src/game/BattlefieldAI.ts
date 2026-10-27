@@ -37,6 +37,7 @@ export const BATTLEFIELD_AI_RULES={
   patrolReach:65,
   jungleFinishCampHP:.36,
   jungleFinishMinimumHP:.1,
+  laneDefenseRadius:435,
 } as const;
 
 export type BattlefieldAIState='waiting'|'advance'|'fight'|'patrol'|'river-patrol'|'lane-assist'|'camp-approach'|'camp-fight'|'invade-approach'|'invade-fight'|'invade-withdraw'|'epic-scout'|'epic-rally'|'epic-fight'|'epic-steal'|'epic-withdraw'|'retreat'|'recall'|'recover'|'dead';
@@ -205,11 +206,19 @@ export class BattlefieldAI {
     // Dragon/Baron attack cannot be interrupted by incidental lane waves.
     // Reevaluate with fresh team vision every decision tick.
     const epic=m.elapsed>=this.epicRetryAt?chooseEpicPlan({
-      team,actor:c,allies:m.teamMembers(team),objectives:m.objectives.objectives,
+      team,actor:c,allies:m.teamMembers(team).filter(ally=>{
+        const role=BATTLEFIELD_ROLE_BY_CHAMPION[ally.visualId as keyof typeof BATTLEFIELD_ROLE_BY_CHAMPION];
+        return role==='jungle'||!this.laneNeedsDefense(team,role);
+      }),objectives:m.objectives.objectives,
       visibleEnemies:this.visibleEnemyHeroes(team),
       canSeeObjective:objective=>m.canSee(team,objective),
       safeFromTowers:point=>!this.dangerousTowerAt(point,team),
     }):null;
+    if(this.epicKind&&this.role!=='jungle'&&this.laneNeedsDefense(team,this.role)){
+      // Defend the threatened lane instead of withdrawing to the jungle.
+      this.epicKind=null;
+      this.epicRetryAt=Math.max(this.epicRetryAt,m.elapsed+EPIC_AI_RULES.retryDelay);
+    }
     if(this.epicKind){
       if(!epic||epic.objective.id!==this.epicKind){
         this.abandonEpic(team);
@@ -337,6 +346,20 @@ export class BattlefieldAI {
       const target=this.match.championTargets.find(t=>t.id===actor.profile.id);
       return !!target&&this.match.canSee(team,target);
     }).map(actor=>({x:actor.hero.x,y:actor.hero.y}));
+  }
+
+  laneNeedsDefense(team:BattlefieldTeam,lane:LaneId):boolean{
+    const enemy:BattlefieldTeam=team==='blue'?'red':'blue';
+    const m=this.match;
+    const frontline=(['outer','inner','inhibitor'] as const)
+      .map(role=>m.structure(team,role,lane)).find(unit=>unit.alive)??m.structure(team,'nexus');
+    const near=(point:Point)=>distance(point,frontline)<=BATTLEFIELD_AI_RULES.laneDefenseRadius;
+    // Every hostile observation requires current, shared team sight.
+    if(m.minions(enemy,lane).filter(unit=>unit.alive&&m.canSee(team,unit)&&near(unit)).length>=2)return true;
+    return m.teamMembers(enemy).some(actor=>{
+      const target=m.championTargets.find(value=>value.id===actor.profile.id);
+      return actor.alive&&!!target&&m.canSee(team,target)&&near(actor.hero);
+    });
   }
 
   private followEpic(plan:EpicPlan){

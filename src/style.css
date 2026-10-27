@@ -24,3 +24,14 @@
 #match-hud[hidden],#epic-status[hidden]{display:none}
 #match-hud #epic-status{display:block;color:#d0ddac;line-height:1.35;white-space:normal;overflow-wrap:anywhere}
 @media(max-height:450px){#match-hud #epic-status{font-size:9px}}
+
+/* Collapsible touch-friendly neutral objective controls. */
+#epic-panel[hidden]{display:none!important}
+#match-hud #epic-panel{display:grid;gap:5px;border-top:1px solid #536b55;padding-top:7px;max-width:100%;pointer-events:auto}
+#epic-panel .epic-entry{display:flex;align-items:center;gap:5px;min-width:0}
+#epic-panel .epic-entry>span{display:flex;flex:1;min-width:0;flex-direction:column;gap:2px;font-size:11px}
+#epic-panel .epic-entry b{font-size:11px;font-weight:600;color:#e4d29c}
+#epic-panel .epic-entry small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#adc6b2}
+#match-hud #epic-panel button{flex-shrink:0;min-width:44px;min-height:32px;padding:7px 9px;margin:0;touch-action:manipulation}
+#epic-panel .epic-note{white-space:normal;font-size:9px;line-height:1.4;color:#a6b7a9}
+@media(max-height:450px){#match-hud #epic-panel{gap:3px;padding-top:4px}#epic-panel .epic-entry b{font-size:10px}#match-hud #epic-panel button{min-height:30px;padding:4px 8px}}

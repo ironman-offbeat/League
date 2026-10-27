@@ -6,6 +6,7 @@ import './style.css';
 import type { SkillSlot } from './game/skillConfig.ts';
 import { CHAMPIONS } from './game/champions.ts';
 import { ArenaScene } from './game/ArenaScene.ts';
+import { epicHudStatus } from './game/EpicHud.ts';
 
 const el=<T extends HTMLElement=HTMLElement>(id:string)=>document.getElementById(id) as T;
 const scene=new ArenaScene();
@@ -30,6 +31,9 @@ scene.onFrame=s=>{
   el('mode').textContent=match?'연습장으로':'3라인 경기';
   el('session-name').textContent=s.battlefield?'3라인 전장':match?'한 라인 공성':'조작 연습장';
   el('retaliation').hidden=!!match;el('training-objectives').hidden=!!match;el('match-hud').hidden=!match;el('epic-status').hidden=!s.battlefield;
+  el('epic-toggle').hidden=!s.battlefield;
+  if(!s.battlefield){el('epic-panel').hidden=true;el('epic-toggle').setAttribute('aria-expanded','false');}
+  for(const kind of ['dragon','baron'] as const)el<HTMLButtonElement>(`epic-rally-${kind}`).disabled=s.blocked;
   el('result-overlay').hidden=!match?.result;
   if(match){
     const time=`${Math.floor(match.elapsed/60).toString().padStart(2,'0')}:${Math.floor(match.elapsed%60).toString().padStart(2,'0')}`;
@@ -45,6 +49,9 @@ scene.onFrame=s=>{
       const epic=s.battlefield.epicRewards;
       const baronTime=(team:'blue'|'red')=>epic[team].hasBaron(match.elapsed)?`${Math.ceil(epic[team].baronRemaining(match.elapsed))}초`:'없음';
       el('epic-status').textContent=`드래곤 아군 ${epic.blue.dragonStacks} / 적군 ${epic.red.dragonStacks} · 바론 아군 ${baronTime('blue')} / 적군 ${baronTime('red')}`;
+      for(const kind of ['dragon','baron'] as const){
+        el(`epic-info-${kind}`).textContent=epicHudStatus(s.battlefield,'blue',kind);
+      }
     }else if(s.laneMatch){
       const tower=s.laneMatch.structure('red','tower'),blue=s.laneMatch.structure('blue','nexus'),red=s.laneMatch.structure('red','nexus');
       el('match-objective').textContent=tower.alive?`적 타워 ${Math.ceil(tower.hp)} · 미니언과 함께 공성`:`적 넥서스 ${Math.ceil(red.hp)} · 파괴하면 승리`;
@@ -95,13 +102,26 @@ el('pause').onclick=()=>{manualPause=!manualPause;backgroundPause=false;syncPaus
 el('resume').onclick=()=>{manualPause=false;backgroundPause=false;syncPause();};
 el('help').onclick=()=>{helpOpen=true;el('help-overlay').hidden=false;syncPause();};
 el('close-help').onclick=()=>{helpOpen=false;el('help-overlay').hidden=true;syncPause();};
-el('reset').onclick=()=>{scene.restartTraining();manualPause=false;backgroundPause=false;syncPause();};
-function switchMode(lane:boolean){skillDrag=null;scene.startMode(lane);manualPause=false;backgroundPause=false;syncPause();}
+el('reset').onclick=()=>{scene.restartTraining();resetEpicPanel();manualPause=false;backgroundPause=false;syncPause();};
+function switchMode(lane:boolean){skillDrag=null;scene.startMode(lane);resetEpicPanel();manualPause=false;backgroundPause=false;syncPause();}
 el('mode').onclick=()=>switchMode(!scene.match);
 el('rematch').onclick=()=>switchMode(true);
 el('back-training').onclick=()=>switchMode(false);
 el('rally').onclick=()=>scene.rally();
 el('front-camera').onclick=()=>scene.showFront();
+const resetEpicPanel=()=>{
+  el('epic-panel').hidden=true;
+  el('epic-toggle').setAttribute('aria-expanded','false');
+};
+el('epic-toggle').onclick=()=>{
+  if(!scene.battlefield)return;
+  el('epic-panel').hidden=!el('epic-panel').hidden;
+  el('epic-toggle').setAttribute('aria-expanded',String(!el('epic-panel').hidden));
+};
+for(const kind of ['dragon','baron'] as const){
+  el(`epic-focus-${kind}`).onclick=()=>scene.focusEpic(kind);
+  el(`epic-rally-${kind}`).onclick=()=>scene.rallyEpic(kind);
+}
 el('center').onclick=el('portrait').onclick=()=>scene.centerHero();
 el('retaliation').onclick=()=>{if(!scene.blocked)scene.squad.setRetaliation(!scene.squad.retaliation);};
 el('recall').onclick=()=>{if(!scene.blocked&&scene.combat.recall())scene.notify('귀환 중 · 이동이나 스킬을 사용하면 취소됩니다.');};

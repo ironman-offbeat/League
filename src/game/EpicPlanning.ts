@@ -16,7 +16,8 @@ export const EPIC_AI_RULES={
   finishingThreshold:.12,
   stealHealth:.68,
   minimum:{dragon:3,baron:3},
-  maximum:{dragon:3,baron:4},
+  // Reserve at least one lane hero during a full four-member raid.
+  maximum:{dragon:3,baron:3},
   huntTravel:{dragon:1150,baron:1400},
   stealTravel:650,
   rallyRadius:250,
@@ -96,8 +97,9 @@ export function chooseEpicPlan(ctx:EpicPlanningContext):EpicPlan|null{
       options.push({actor,pathIds:route.pathIds,pathDistance:route.pathDistance});
     }
     const maxMembers=mode==='steal'?3:EPIC_AI_RULES.maximum[objective.objectiveKind];
-    options.sort((a,b)=>a.pathDistance-b.pathDistance||
-      a.actor.profile.id.localeCompare(b.actor.profile.id));
+    // Prioritize a reachable jungler rather than vacating all three lanes.
+  options.sort((a,b)=>Number(b.actor.visualId==='amumu')-Number(a.actor.visualId==='amumu')||
+    a.pathDistance-b.pathDistance||a.actor.profile.id.localeCompare(b.actor.profile.id));
     const chosen=options.slice(0,maxMembers);
     if(chosen.length<minimum||pitEnemies.length>chosen.length)continue;
     const mine=chosen.find(candidate=>candidate.actor===ctx.actor);

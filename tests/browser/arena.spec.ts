@@ -33,6 +33,31 @@ test('three-lane battlefield renders full structures, role starts, overview came
  expect(await page.evaluate(()=>(window as any).leagueDebug.match.opponents.every((c:any)=>c.life===0&&c.hero.hp===c.hero.maxHp&&c.level===1))).toBe(true);
  await press('#mode');expect(await page.evaluate(()=>(window as any).leagueDebug.match)).toBe(null);expect(errors).toEqual([]);
 });
+test('objective controls display public timers and issue explicit focus and rally orders',async({page,isMobile})=>{
+  test.setTimeout(60000);
+  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
+  await page.goto('/');await expect(page.locator('body')).toHaveAttribute('data-ready','true');
+  const press=async(id:string)=>{if(isMobile)await page.locator(id).tap();else await page.locator(id).click();};
+  await press('#mode');
+  await expect(page.locator('#epic-toggle')).toBeVisible();
+  await expect(page.locator('#epic-panel')).toBeHidden();
+  await press('#epic-toggle');
+  await expect(page.locator('#epic-panel')).toBeVisible();
+  await expect(page.locator('#epic-toggle')).toHaveAttribute('aria-expanded','true');
+  await expect(page.locator('#epic-info-dragon')).toContainText('등장');
+  await expect(page.locator('#epic-info-baron')).toContainText('등장');
+  await press('#epic-focus-dragon');
+  expect(await page.evaluate(()=>(window as any).leagueDebug.camera.zoom)).toBeGreaterThan(.5);
+  await press('#epic-rally-dragon');
+  expect(await page.evaluate(()=>(window as any).leagueDebug.members.map((x:any)=>x.command))).toEqual(['move','move','move','move']);
+  await press('#pause');await expect(page.locator('#epic-rally-dragon')).toBeDisabled();
+  await press('#resume');await expect(page.locator('#epic-rally-dragon')).toBeEnabled();
+  await press('#epic-toggle');await expect(page.locator('#epic-panel')).toBeHidden();
+  await press('#reset');await expect(page.locator('#epic-panel')).toBeHidden();
+  await press('#mode');await expect(page.locator('#epic-toggle')).toBeHidden();
+  expect(errors).toEqual([]);
+});
+
 test('lane shop spends shared gold, upgrades only the selected hero and resets cleanly',async({page,isMobile},info)=>{
  test.setTimeout(150000);
  const errors:string[]=[];page.on('pageerror',e=>errors.push(e.message));
