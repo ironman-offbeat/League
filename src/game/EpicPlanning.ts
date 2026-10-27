@@ -9,7 +9,7 @@ import { jungleSafeRoute } from './JunglePlanning.ts';
 export const EPIC_AI_RULES={
   interval: .3,
   healthEnter:.62,
-  healthContinue:.30,
+  healthContinue:.22,
   manaEnter:.22,
   manaContinue:.08,
   stealThreshold:.25,
@@ -67,9 +67,12 @@ export function chooseEpicPlan(ctx:EpicPlanningContext):EpicPlan|null{
     if(!objective.alive)continue;
     const ratio=objective.hp/objective.maxHp;
     const mode:EpicPlanMode=ratio<=EPIC_AI_RULES.stealThreshold?'steal':'hunt';
+    const engaged=ctx.allies.some(actor=>
+      actor.command.kind==='attack'&&actor.command.targetId===objective.id
+    );
     const minimum=mode==='steal'
       ?(ratio<=EPIC_AI_RULES.finishingThreshold?1:2)
-      :EPIC_AI_RULES.minimum[objective.objectiveKind];
+      :engaged&&ratio<=.55?2:EPIC_AI_RULES.minimum[objective.objectiveKind];
     const maxTravel=mode==='steal'
       ?EPIC_AI_RULES.stealTravel:EPIC_AI_RULES.huntTravel[objective.objectiveKind];
     const pitEnemies=ctx.visibleEnemies.filter(point=>

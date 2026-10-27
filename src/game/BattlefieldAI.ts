@@ -109,9 +109,13 @@ export class BattlefieldAI {
       hp>BATTLEFIELD_AI_RULES.jungleFinishMinimumHP&&
       distance(c.hero,camp)<=BATTLEFIELD_AI_RULES.engage
     );
-    // Avoid abandoning an almost-finished camp at the ordinary lane retreat
-    // threshold, but never override critical-health or nearby PvP danger.
-    if((hp<BATTLEFIELD_AI_RULES.retreatHP&&!finishableCamp)||(c.maxMana>0&&mana<.12))this.recovering=true;
+    const finishableEpic=!!this.epicKind&&!threats.length&&m.objectives.objectives.some(boss=>
+      boss.id===this.epicKind&&m.canSee(team,boss)&&
+      boss.hp/boss.maxHp<=.35&&hp>.14&&distance(c.hero,boss)<=BATTLEFIELD_AI_RULES.engage
+    );
+    // A close-to-finished neutral objective keeps an engaged survivor active,
+    // but critical health, insufficient mana and PvP danger still take priority.
+    if((hp<BATTLEFIELD_AI_RULES.retreatHP&&!finishableCamp&&!finishableEpic)||(c.maxMana>0&&mana<.12))this.recovering=true;
 
     if(this.recovering){
       if(this.epicKind){
@@ -202,19 +206,24 @@ export class BattlefieldAI {
       return;
     }
 
-    // Coordinate boss hunts BEFORE normal minion targeting, so an ongoing
-    // Dragon/Baron attack cannot be interrupted by incidental lane waves.
-    // Reevaluate with fresh team vision every decision tick.
+    // A visible low-health boss beside an already-present ally can still be
+    // contested even if that ally's lane also has pressure. Remote laners defend.
+    const closeSteal=m.objectives.objectives.find(boss=>
+      m.canSee(team,boss)&&boss.hp/boss.maxHp<=EPIC_AI_RULES.stealThreshold
+    );
+    const canSteal=(actor:Combat)=>!!closeSteal&&distance(actor.hero,closeSteal)<=EPIC_AI_RULES.rallyRadius;
+    // Coordinate boss hunts BEFORE normal minion targeting, reevaluating
+    // only currently visible objectives and enemy threat information.
     const epic=m.elapsed>=this.epicRetryAt?chooseEpicPlan({
       team,actor:c,allies:m.teamMembers(team).filter(ally=>{
         const role=BATTLEFIELD_ROLE_BY_CHAMPION[ally.visualId as keyof typeof BATTLEFIELD_ROLE_BY_CHAMPION];
-        return role==='jungle'||!this.laneNeedsDefense(team,role);
+        return role==='jungle'||canSteal(ally)||!this.laneNeedsDefense(team,role);
       }),objectives:m.objectives.objectives,
       visibleEnemies:this.visibleEnemyHeroes(team),
       canSeeObjective:objective=>m.canSee(team,objective),
       safeFromTowers:point=>!this.dangerousTowerAt(point,team),
     }):null;
-    if(this.epicKind&&this.role!=='jungle'&&this.laneNeedsDefense(team,this.role)){
+    if(this.epicKind&&this.role!=='jungle'&&!canSteal(c)&&this.laneNeedsDefense(team,this.role)){
       // Defend the threatened lane instead of withdrawing to the jungle.
       this.epicKind=null;
       this.epicRetryAt=Math.max(this.epicRetryAt,m.elapsed+EPIC_AI_RULES.retryDelay);

@@ -8,6 +8,7 @@ test('09e-6 natural ten-minute match observation: objective activity and visible
   const limit=10*60;
   const states:Record<string,number>={};
   let pressuredRaids=0,observations=0,visibleBossSamples=0;
+  const minimumHP={dragon:100,baron:100};
   // Fixed in-game simulation step. Stop on natural nexus destruction instead
   // of claiming a full ten-minute match was played when it ended early.
   for(let frame=0;frame<Math.round(limit/RULES.step)&&!match.result;frame++){
@@ -19,11 +20,15 @@ test('09e-6 natural ten-minute match observation: objective activity and visible
       if(brain.role!=='jungle'&&['epic-fight','epic-rally','epic-steal'].includes(brain.state)&&
         brain.laneNeedsDefense('red',brain.role))pressuredRaids++;
     }
-    for(const boss of match.objectives.objectives)if(match.canSee('red',boss))visibleBossSamples++;
+    for(const boss of match.objectives.objectives){
+      if(match.canSee('red',boss))visibleBossSamples++;
+      if(boss.alive)minimumHP[boss.id]=Math.min(minimumHP[boss.id],
+        Math.round(100*boss.hp/boss.maxHp));
+    }
   }
   console.info('[09e-6 match balance]',JSON.stringify({
     seconds:Math.round(match.elapsed),result:match.result,
-    observations,states,visibleBossSamples,pressuredRaids,
+    observations,states,visibleBossSamples,pressuredRaids,minimumHP,
     dragonStacks:match.epicRewards.red.dragonStacks,
     baronActive:match.epicRewards.red.hasBaron(match.elapsed),
     buildings:{blue:match.structures('blue').filter(u=>u.alive).length,red:match.structures('red').filter(u=>u.alive).length},
