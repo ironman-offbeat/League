@@ -3,12 +3,14 @@ import assert from 'node:assert/strict';
 import { BattlefieldMatch } from '../src/game/BattlefieldMatch.ts';
 import { RULES } from '../src/game/config.ts';
 import { EPIC_OBJECTIVES } from '../src/game/EpicObjectives.ts';
+import { chooseSiegePlan } from '../src/game/SiegePlanning.ts';
 
 test('09e-6 natural fifteen-minute match observation: objective activity and visible lane pressure',()=>{
   const match=new BattlefieldMatch({ai:true});
   const limit=15*60;
   const states:Record<string,number>={};
-  let pressuredRaids=0,observations=0,visibleBossSamples=0;
+  let pressuredRaids=0,observations=0,visibleBossSamples=0,baronEscortSeconds=0;
+  let baronBearerSeconds=0,reachableSiegeSeconds=0,empoweredMinionSeconds=0;
   const minimumHP={dragon:100,baron:100};
   // Fixed in-game simulation step. Stop on natural nexus destruction instead
   // of claiming a full ten-minute match was played when it ended early.
@@ -16,8 +18,16 @@ test('09e-6 natural fifteen-minute match observation: objective activity and vis
     match.step(RULES.step);
     if(frame%Math.round(1/RULES.step)!==0)continue;
     observations++;
+    if(match.epicRewards.red.hasBaron(match.elapsed)){
+      for(const actor of match.opponents)if(actor.baronActive){
+        baronBearerSeconds++;
+        if(chooseSiegePlan(match,actor))reachableSiegeSeconds++;
+      }
+      empoweredMinionSeconds+=match.minions('red').filter(unit=>match.baronEmpowersMinion(unit)).length;
+    }
     for(const brain of match.ai){
       states[brain.state]=(states[brain.state]??0)+1;
+      if(brain.state==='siege-escort'&&brain.actor.baronActive)baronEscortSeconds++;
       if(brain.role!=='jungle'&&['epic-fight','epic-rally','epic-steal'].includes(brain.state)&&
         brain.laneNeedsDefense('red',brain.role))pressuredRaids++;
     }
@@ -29,7 +39,9 @@ test('09e-6 natural fifteen-minute match observation: objective activity and vis
   }
   console.info('[09e-6 match balance]',JSON.stringify({
     seconds:Math.round(match.elapsed),result:match.result,
-    observations,states,visibleBossSamples,pressuredRaids,minimumHP,
+    observations,states,visibleBossSamples,pressuredRaids,
+    baronEscortSeconds,baronBearerSeconds,reachableSiegeSeconds,empoweredMinionSeconds,
+    blueNexusHp:Math.round(match.structure('blue','nexus').hp),minimumHP,
     objectiveKills:Object.fromEntries(match.objectives.objectives.map(b=>[b.id,b.lastDefeatedAt===null?0:1])),
     championLevels:match.opponents.map(a=>a.progression.level),
     dragonStacks:match.epicRewards.red.dragonStacks,
