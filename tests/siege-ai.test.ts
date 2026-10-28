@@ -1,12 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RULES, distance } from '../src/game/config.ts';
-import { BattlefieldMatch, BATTLEFIELD } from '../src/game/BattlefieldMatch.ts';
+import { BattlefieldMatch } from '../src/game/BattlefieldMatch.ts';
 import { chooseSiegePlan } from '../src/game/SiegePlanning.ts';
 import { BATTLEFIELD_AI_RULES } from '../src/game/BattlefieldAI.ts';
 import type { LaneId } from '../src/game/navigation.ts';
 
-const lanes:LaneId[]=['top','mid','bottom'];
 function setup(){
   const m=new BattlefieldMatch({ai:true});
   m.step(10);
@@ -80,7 +79,9 @@ test('09e-7 damage and buffs still use ordinary building and minion combat',()=>
   m.step(RULES.step);
   const objective=m.structure('blue','inhibitor','mid');
   const wave=repositionWave(m,'mid',{x:objective.x+55,y:objective.y});
-  for(const blue of m.members)Object.assign(blue.hero,{x:140,y:840});
+  // An unsupported 1-v-4 fight should retreat. Isolate the real building
+  // attack by removing nearby defenders without changing building health.
+  for(const blue of m.members)Object.assign(blue.hero,{x:1480,y:920});
   Object.assign(jungler.hero,{x:objective.x+55,y:objective.y+12});
   m.refreshVision();
   const brain=m.ai[3];
