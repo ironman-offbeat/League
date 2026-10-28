@@ -8,7 +8,7 @@ test('09e-6 natural fifteen-minute match observation: objective activity and vis
   const match=new BattlefieldMatch({ai:true});
   const limit=15*60;
   const states:Record<string,number>={};
-  let pressuredRaids=0,observations=0,visibleBossSamples=0;
+  let pressuredRaids=0,observations=0,visibleBossSamples=0,baronEscortSeconds=0;
   const minimumHP={dragon:100,baron:100};
   // Fixed in-game simulation step. Stop on natural nexus destruction instead
   // of claiming a full ten-minute match was played when it ended early.
@@ -18,6 +18,7 @@ test('09e-6 natural fifteen-minute match observation: objective activity and vis
     observations++;
     for(const brain of match.ai){
       states[brain.state]=(states[brain.state]??0)+1;
+      if(brain.state==='siege-escort'&&brain.actor.baronActive)baronEscortSeconds++;
       if(brain.role!=='jungle'&&['epic-fight','epic-rally','epic-steal'].includes(brain.state)&&
         brain.laneNeedsDefense('red',brain.role))pressuredRaids++;
     }
@@ -29,7 +30,7 @@ test('09e-6 natural fifteen-minute match observation: objective activity and vis
   }
   console.info('[09e-6 match balance]',JSON.stringify({
     seconds:Math.round(match.elapsed),result:match.result,
-    observations,states,visibleBossSamples,pressuredRaids,minimumHP,
+    observations,states,visibleBossSamples,pressuredRaids,baronEscortSeconds,minimumHP,
     objectiveKills:Object.fromEntries(match.objectives.objectives.map(b=>[b.id,b.lastDefeatedAt===null?0:1])),
     championLevels:match.opponents.map(a=>a.progression.level),
     dragonStacks:match.epicRewards.red.dragonStacks,

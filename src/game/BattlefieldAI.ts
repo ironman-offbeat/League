@@ -15,10 +15,11 @@ import type {
 } from './BattlefieldMatch.ts';
 import { BATTLEFIELD_NAVIGATION } from './navigation.ts';
 import type { LaneId } from './navigation.ts';
-import { chooseJungleCampForBuffs, chooseJungleAssist, chooseJungleInvade, jungleSafeRoute, JUNGLE_AI_RULES, JUNGLE_INVADE_RULES } from './JunglePlanning.ts';
+import { chooseJungleCampForBuffs, chooseJungleAssist, chooseJungleInvade, jungleSafeRoute, jungleSafeSegment, JUNGLE_AI_RULES, JUNGLE_INVADE_RULES } from './JunglePlanning.ts';
 import type { JungleCampPlan } from './JunglePlanning.ts';
 import type { JungleLaneSignal } from './JunglePlanning.ts';
 import { chooseEpicPlan, epicScoutRoute, EPIC_AI_RULES } from './EpicPlanning.ts';
+import { chooseSiegePlan, SIEGE_AI_RULES } from './SiegePlanning.ts';
 import type { EpicPlan } from './EpicPlanning.ts';
 import { EPIC_OBJECTIVES } from './EpicObjectives.ts';
 import type { EpicObjectiveKind } from './EpicObjectives.ts';
@@ -40,7 +41,7 @@ export const BATTLEFIELD_AI_RULES={
   laneDefenseRadius:435,
 } as const;
 
-export type BattlefieldAIState='waiting'|'advance'|'fight'|'patrol'|'river-patrol'|'lane-assist'|'camp-approach'|'camp-fight'|'invade-approach'|'invade-fight'|'invade-withdraw'|'epic-scout'|'epic-rally'|'epic-fight'|'epic-steal'|'epic-withdraw'|'retreat'|'recall'|'recover'|'dead';
+export type BattlefieldAIState='waiting'|'advance'|'fight'|'patrol'|'river-patrol'|'lane-assist'|'camp-approach'|'camp-fight'|'invade-approach'|'invade-fight'|'invade-withdraw'|'epic-scout'|'epic-rally'|'epic-fight'|'epic-steal'|'epic-withdraw'|'siege-escort'|'siege-attack'|'siege-finish'|'retreat'|'recall'|'recover'|'dead';
 
 const LANE_ROLES:readonly LaneId[]=['top','mid','bottom'];
 const RIVER_PATROL:Record<BattlefieldTeam,readonly string[]>={
@@ -214,7 +215,10 @@ export class BattlefieldAI {
     const canSteal=(actor:Combat)=>!!closeSteal&&distance(actor.hero,closeSteal)<=EPIC_AI_RULES.rallyRadius;
     // Coordinate boss hunts BEFORE normal minion targeting, reevaluating
     // only currently visible objectives and enemy threat information.
-    const epic=m.elapsed>=this.epicRetryAt?chooseEpicPlan({
+    // Baron power-play is short-lived. Do not start a routine healthy boss
+    // raid while an acquired Baron buff could be used to empower a siege wave.
+    const keepPushing=c.baronActive&&!this.epicKind&&!canSteal(c);
+    const epic=!keepPushing&&m.elapsed>=this.epicRetryAt?chooseEpicPlan({
       team,actor:c,allies:m.teamMembers(team).filter(ally=>{
         const role=BATTLEFIELD_ROLE_BY_CHAMPION[ally.visualId as keyof typeof BATTLEFIELD_ROLE_BY_CHAMPION];
         return role==='jungle'||canSteal(ally)||!this.laneNeedsDefense(team,role);
@@ -251,8 +255,27 @@ export class BattlefieldAI {
       return;
     }
 
+    // Once an inhibitor falls, a well-supported nexus is the objective.
+    // Only finish when live visible defenders do not outnumber local allies;
+    // an unsupported base dive remains unsafe, regardless of game clock.
+    const defendingTeam:BattlefieldTeam=team==='blue'?'red':'blue';
+    const nexus=m.structure(defendingTeam,'nexus');
+    if(nexus.alive&&!nexus.protected&&m.supported(nexus,team)&&m.canSee(team,nexus)&&
+      distance(c.hero,nexus)<=BATTLEFIELD_AI_RULES.engage&&
+      hostileHeroes.length<=allies.length&&!this.dangerousTowerAt(c.hero,team)){
+      this.state='siege-finish';
+      this.attack(nexus);
+      return;
+    }
     local.sort((a,b)=>Number(b.kind==='champion')-Number(a.kind==='champion')||distance(c.hero,a)-distance(c.hero,b));
     const target=local[0];
+    if(target?.kind==='champion'){
+      this.state='fight';
+      this.attack(target);
+      this.skills(target);
+      return;
+    }
+    if(this.role==='jungle'&&this.stepSiege(team))return;
     if(target){
       this.state='fight';
       this.attack(target);
@@ -295,6 +318,43 @@ export class BattlefieldAI {
     const lateral=(this.index%2?1:-1)*(25+Math.floor(this.index/2)*28);
     const goal=m.lanePoint(team,lane,Math.max(0,progress),team==='blue'?lateral:-lateral);
     if(distance(c.hero,goal)>20&&(c.command.kind!=='attackMove'||distance(c.command.point,goal)>45))c.attackMove(goal);
+  }
+
+  private stepSiege(team:BattlefieldTeam):boolean{
+    const c=this.actor,m=this.match;
+    const plan=chooseSiegePlan(m,c);
+    if(!plan)return false;
+    // Tower safety must apply to the whole segment, not just the endpoints.
+    // The support predicate is evaluated live every AI decision: when a wave
+    // dies, the attack order is replaced by the existing tower retreat.
+    const safe=(point:Point)=>!this.dangerousTowerAt(point,team);
+    const liveEnemies=this.visibleEnemyHeroes(team);
+    const nearbyAllies=m.teamMembers(team).filter(actor=>
+      actor.alive&&distance(actor.hero,plan.escort)<=BATTLEFIELD_AI_RULES.engage
+    ).length;
+    if(liveEnemies.filter(p=>distance(p,plan.escort)<=BATTLEFIELD_AI_RULES.engage).length>nearbyAllies+1)return false;
+    if(m.supported(plan.objective,team)&&m.canSee(team,plan.objective)&&
+      distance(c.hero,plan.objective)<=BATTLEFIELD_AI_RULES.engage&&safe(c.hero)){
+      this.state=plan.objective.role==='nexus'?'siege-finish':'siege-attack';
+      this.attack(plan.objective);
+      return true;
+    }
+    const goal=plan.escortPoint;
+    if(!safe(goal))return false;
+    if(distance(c.hero,goal)<=SIEGE_AI_RULES.escortReach){
+      this.state='siege-escort';
+      this.move(goal);
+      return true;
+    }
+    const waypoint=BATTLEFIELD_NAVIGATION.nearest(goal,node=>safe(node.point));
+    if(!waypoint||distance(waypoint.point,goal)>SIEGE_AI_RULES.routeSnap||
+      !jungleSafeSegment(waypoint.point,goal,safe))return false;
+    const route=jungleSafeRoute(c.hero,waypoint.id,safe);
+    if(!route||route.pathDistance+distance(waypoint.point,goal)>SIEGE_AI_RULES.maximumTravel)return false;
+    const nextId=route.pathIds.length>1?route.pathIds[1]:null;
+    this.state='siege-escort';
+    this.move(nextId?BATTLEFIELD_NAVIGATION.node(nextId).point:goal);
+    return true;
   }
 
   private stepJungle(team:BattlefieldTeam){
