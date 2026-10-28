@@ -176,6 +176,16 @@ export class BattlefieldAI {
       return;
     }
 
+    // An earned Baron power-play takes priority over a stale jungle invasion
+    // when a real friendly wave offers a siege route. No teleport or buff
+    // is granted: the normal graph travel, tower and visible-enemy checks apply.
+    if(this.role==='jungle'&&c.baronActive&&chooseSiegePlan(m,c)){
+      if(this.invadedCampId||this.invadeWithdrawing){
+        this.invadedCampId=null;
+        this.invadeWithdrawing=false;
+        this.invadeRetryAt=Math.max(this.invadeRetryAt,m.elapsed+JUNGLE_INVADE_RULES.retryDelay);
+      }
+    }
     // An invasion is aborted before PvP target selection when fresh team
     // vision or tower status reveals a dangerous route or contested camp.
     if(this.role==='jungle'&&this.invadedCampId){
@@ -275,7 +285,16 @@ export class BattlefieldAI {
       this.skills(target);
       return;
     }
-    if(this.role==='jungle'&&this.stepSiege(team))return;
+    // Clear a directly attackable minion before escorting through it; the
+    // jungler otherwise joins a real Baron push instead of farming camps.
+    if(target&&distance(c.hero,target)<=Math.min(220,c.stats.range+65)){
+      this.state='fight';
+      this.attack(target);
+      return;
+    }
+    if((this.role==='jungle'||(c.baronActive&&!target&&
+      this.role===chooseSiegePlan(m,c)?.lane&&!this.laneNeedsDefense(team,this.role)))&&
+      this.stepSiege(team))return;
     if(target){
       this.state='fight';
       this.attack(target);
