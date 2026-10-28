@@ -20,8 +20,8 @@ export const EPIC_OBJECTIVES={
 } as const satisfies Record<EpicObjectiveKind,EpicObjectiveDefinition>;
 
 export const EPIC_COMBAT={
-  dragon:{hp:2500,armor:35,magicResist:30,attack:130,interval:1.5,range:78,speed:65,leash:340,resetSpeed:140,homeRadius:8},
-  baron:{hp:6500,armor:55,magicResist:45,attack:220,interval:1.6,range:105,speed:48,leash:380,resetSpeed:130,homeRadius:10},
+  dragon:{hp:2500,armor:35,magicResist:30,attack:130,interval:1.5,range:78,speed:65,leash:340,resetSpeed:140,homeRadius:8,retargetOnDisengage:true},
+  baron:{hp:6500,armor:55,magicResist:45,attack:220,interval:1.6,range:105,speed:48,leash:380,resetSpeed:130,homeRadius:10,retargetOnDisengage:true},
 } as const;
 
 export class EpicObjective implements Target {

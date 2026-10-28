@@ -14,6 +14,9 @@ export type NeutralCombatRules={
   leash:number;
   resetSpeed:number;
   homeRadius:number;
+  // Epic raid bosses can re-target an active attacker if a tank dies/exits.
+  // Ordinary jungle camps keep their original single-aggressor leash behavior.
+  retargetOnDisengage?:boolean;
 };
 
 export type NeutralMonster=Target & {
@@ -47,7 +50,16 @@ export function stepNeutralMonster(
     return;
   }
 
-  const target=actors.find(actor=>actor.profile.id===monster.aggro);
+  let target=actors.find(actor=>actor.profile.id===monster.aggro);
+  if((!target||!target.alive||distance(target.hero,monster.point)>rules.leash)&&
+     rules.retargetOnDisengage){
+    const next=actors.find(actor=>
+      actor.alive&&actor.command.kind==='attack'&&
+      actor.command.targetId===monster.id&&
+      distance(actor.hero,monster.point)<=rules.leash
+    );
+    if(next){monster.aggro=next.profile.id;target=next;}
+  }
   if(!target||!target.alive||
     distance(target.hero,monster.point)>rules.leash||
     distance(monster,monster.point)>rules.leash){

@@ -9,14 +9,15 @@ import { jungleSafeRoute } from './JunglePlanning.ts';
 export const EPIC_AI_RULES={
   interval: .3,
   healthEnter:.62,
-  healthContinue:.30,
+  healthContinue:.22,
   manaEnter:.22,
   manaContinue:.08,
   stealThreshold:.25,
   finishingThreshold:.12,
   stealHealth:.68,
   minimum:{dragon:3,baron:3},
-  maximum:{dragon:3,baron:4},
+  // Reserve at least one lane hero during a full four-member raid.
+  maximum:{dragon:3,baron:3},
   huntTravel:{dragon:1150,baron:1400},
   stealTravel:650,
   rallyRadius:250,
@@ -66,9 +67,12 @@ export function chooseEpicPlan(ctx:EpicPlanningContext):EpicPlan|null{
     if(!objective.alive)continue;
     const ratio=objective.hp/objective.maxHp;
     const mode:EpicPlanMode=ratio<=EPIC_AI_RULES.stealThreshold?'steal':'hunt';
+    const engaged=ctx.allies.some(actor=>
+      actor.command.kind==='attack'&&actor.command.targetId===objective.id
+    );
     const minimum=mode==='steal'
       ?(ratio<=EPIC_AI_RULES.finishingThreshold?1:2)
-      :EPIC_AI_RULES.minimum[objective.objectiveKind];
+      :engaged&&ratio<=.55?2:EPIC_AI_RULES.minimum[objective.objectiveKind];
     const maxTravel=mode==='steal'
       ?EPIC_AI_RULES.stealTravel:EPIC_AI_RULES.huntTravel[objective.objectiveKind];
     const pitEnemies=ctx.visibleEnemies.filter(point=>
@@ -96,8 +100,9 @@ export function chooseEpicPlan(ctx:EpicPlanningContext):EpicPlan|null{
       options.push({actor,pathIds:route.pathIds,pathDistance:route.pathDistance});
     }
     const maxMembers=mode==='steal'?3:EPIC_AI_RULES.maximum[objective.objectiveKind];
-    options.sort((a,b)=>a.pathDistance-b.pathDistance||
-      a.actor.profile.id.localeCompare(b.actor.profile.id));
+    // Prioritize a reachable jungler rather than vacating all three lanes.
+  options.sort((a,b)=>Number(b.actor.visualId==='amumu')-Number(a.actor.visualId==='amumu')||
+    a.pathDistance-b.pathDistance||a.actor.profile.id.localeCompare(b.actor.profile.id));
     const chosen=options.slice(0,maxMembers);
     if(chosen.length<minimum||pitEnemies.length>chosen.length)continue;
     const mine=chosen.find(candidate=>candidate.actor===ctx.actor);

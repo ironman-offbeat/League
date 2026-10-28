@@ -114,6 +114,19 @@ test('dead aggressor clears boss hostility without attacking buildings or minion
   assert.equal(boss.generation,gen+1);
 });
 
+test('epic raid boss retains partial HP and shifts aggro to an active survivor on tank death',()=>{
+  const {match,boss,blue,red}=battlefield('dragon');
+  assert.equal(blue.attack(boss.id),true);
+  red.hurt(boss,260,'opening poke',false,'physical','basic');
+  assert.equal(boss.aggro,red.profile.id);
+  const hp=boss.hp,generation=boss.generation;
+  red.receiveDamage(1e9);
+  match.step(RULES.step);
+  assert.equal(boss.aggro,blue.profile.id);
+  assert.ok(boss.hp<=hp);
+  assert.equal(boss.generation,generation);
+});
+
 test('Baron has independent attack, leash and pursuit configuration',()=>{
   const {match,boss,red}=battlefield('baron');
   assert.equal(boss.maxHp,EPIC_COMBAT.baron.hp);
