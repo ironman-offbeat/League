@@ -8,12 +8,11 @@ import type { LaneId } from './navigation.ts';
 // an open nexus is also a permanent, public late-game reason to group for a push.
 export const SIEGE_AI_RULES={
   minimumHealth:.4,
-  escortHorizon:540,
+  escortHorizon:1050,
   behindWave:75,
   escortReach:100,
   routeSnap:420,
-  maximumTravel:1600,
-  towerApproachMargin:15,
+  maximumTravel:1900,
 } as const;
 
 const LANES:readonly LaneId[]=['top','mid','bottom'];
